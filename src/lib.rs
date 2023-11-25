@@ -92,11 +92,12 @@ fn encodeTestEXI() {
 
         let mut qname: QName = std::mem::zeroed();
         let ns_str_c = CString::new(NS_STR).unwrap();
-        qname.uri = &StringType {
+        let ns_str_c = StringType {
             str_: ns_str_c.as_ptr() as *mut _,
             length: NS_STR.len(),
         };
         let elem_mult_test_str = CString::new(ELEM_MULT_TEST_STR).unwrap();
+        qname.uri = &ns_str_c;
         qname.localName = &StringType {
             str_: elem_mult_test_str.as_ptr() as *mut _,
             length: ELEM_MULT_TEST_STR.len(),
@@ -109,13 +110,56 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
+        qname.uri = &ns_str_c;
+        let elem_encode_str = CString::new(ELEM_ENCODE_STR).unwrap();
+        qname.localName = &StringType {
+            str_: elem_encode_str.as_ptr() as *mut _,
+            length: ELEM_ENCODE_STR.len(),
+        };
+
+        let ec = (serialize.startElement).unwrap()(
+            &mut testStrm as *mut _,
+            qname,
+            &mut valueType as *mut _,
+        );
+        assert_eq!(ec, 0);
+        assert_eq!(valueType, 0);
+
+        // null uri, attr byte local name
         let mut qname: QName = std::mem::zeroed();
         qname.uri = &StringType {
             str_: std::ptr::null::<std::os::raw::c_char>() as *mut std::os::raw::c_char,
             length: 0,
         };
+        let attr_byte_str = CString::new(ATTR_BYTE_STR).unwrap();
+        qname.localName = &StringType {
+            str_: attr_byte_str.as_ptr() as *mut _,
+            length: ATTR_BYTE_STR.len(),
+        };
+        let ec = (serialize.attribute).unwrap()(
+            &mut testStrm as *mut _,
+            qname,
+            1,
+            &mut valueType as *mut _,
+        );
+        assert_eq!(ec, 0);
+        assert_eq!(valueType, 0);
 
-        // let attrbytestr =
-        // qname.localName = &StringType {}
+        let mut chVal = StringType {
+            str_: std::ptr::null::<std::os::raw::c_char>() as *mut std::os::raw::c_char,
+            length: 0,
+        };
+        let fiftyfive = CString::new("55").unwrap();
+        let ec = asciiToString(
+            fiftyfive.as_ptr(),
+            &mut chVal as *mut _,
+            &mut testStrm.memList as *mut _,
+            0,
+        );
+        assert_eq!(ec, 0);
+        assert_eq!(
+            [53, 53],
+            std::slice::from_raw_parts(chVal.str_, chVal.length)
+        );
     }
 }
