@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    println!("cargo:rustc-link-search=native=exip/bin/lib/");
+    println!("cargo:rustc-link-search=native=exirs-sys/exip/bin/lib/");
     println!("cargo:rustc-link-lib=static=exip");
     let bindings = bindgen::Builder::default()
         .header("exip-wrapper.h")

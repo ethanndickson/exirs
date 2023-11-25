@@ -1,3 +1,3 @@
 [submodule "exip"]
-	path = exip
+	path = exirs-sys/exip
 	url = https://github.com/rwl/exip
