@@ -49,8 +49,6 @@ fn encodeTestEXI() {
     unsafe {
         // test args
         let schemaPtr = std::ptr::null::<EXIPSchema>() as *mut _;
-        let outfile = stdout;
-        let outputStream = writeFileOutputStream;
 
         // Stream
         let mut testStrm: EXIStream = std::mem::zeroed();
@@ -76,8 +74,8 @@ fn encodeTestEXI() {
         testStrm.header.opts.enumOpt |= 2; // set strict
 
         // 3. Define external stream for the output
-        buf.ioStrm.readWriteToStream = Some(outputStream);
-        buf.ioStrm.stream = outfile as *mut libc::c_void;
+        buf.ioStrm.readWriteToStream = None;
+        buf.ioStrm.stream = std::ptr::null_mut();
 
         // 4. Initialise Stream
         let ec = initStream(&mut testStrm as *mut _, buf, schemaPtr);
