@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub enum EXIPError {
     NotImplemented = 1,
     Unexpected,

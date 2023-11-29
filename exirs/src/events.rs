@@ -1,5 +1,6 @@
 use crate::data::{Name, SchemaAttribute, SchemalessAttribute};
 
+#[derive(Debug)]
 #[non_exhaustive]
 // No processingInstruction support
 pub enum SchemalessEvent<'a> {
@@ -15,6 +16,7 @@ pub enum SchemalessEvent<'a> {
     },
     ExiHeader,
     SelfContained,
+    Characters(&'a str),
 }
 
 pub enum SchemaEvent<'a> {

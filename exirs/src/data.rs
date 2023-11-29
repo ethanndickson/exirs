@@ -1,22 +1,27 @@
 use std::{borrow::Cow, time::SystemTime};
 
+use ffi::StringType;
+
+#[derive(Debug)]
 pub struct SchemalessAttribute<'a> {
     pub key: Name<'a>,
-    pub value: Cow<'a, [u8]>,
+    pub value: &'a str,
 }
 
+#[derive(Debug)]
 pub struct SchemaAttribute<'a> {
     pub key: Name<'a>,
-    pub value: Cow<'a, SchemaValue<'a>>,
+    pub value: SchemaValue<'a>,
 }
 
+#[derive(Debug)]
 pub struct Name<'a> {
     pub local_name: &'a str,
     pub namespace: &'a str,
     pub prefix: Option<&'a str>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SchemaValue<'a> {
     Integer(i64),
     Boolean(bool),
@@ -25,4 +30,11 @@ pub enum SchemaValue<'a> {
     Binary(&'a [u8]),
     Timestamp(&'a SystemTime),
     List(&'a [SchemaValue<'a>]),
+}
+
+pub(crate) fn to_stringtype<'a>(str: &'a str) -> ffi::StringType {
+    StringType {
+        str_: str.as_ptr() as *mut _,
+        length: str.len(),
+    }
 }
