@@ -8351,7 +8351,7 @@ fn encodeTestEXI() {
         let ec = (serialize.endElement).unwrap()(&mut testStrm as *mut _); // </binaryTest>
         assert_eq!(ec, 0);
 
-        let mut qname = QName {
+        let qname = QName {
             uri: &nullstr_c,
             localName: &StringType {
                 str_: ELEM_ENUM_TYPES_STR.as_ptr() as *mut _,
@@ -8422,7 +8422,10 @@ fn encodeTestEXI() {
                 110, 117, 109, 84, 101, 115, 116, 193, 90, 25, 90, 142, 0
             ],
             std::slice::from_raw_parts(testStrm.buffer.buf as *mut u8, testStrm.buffer.bufContent)
-        )
+        );
+
+        let ec = (serialize.closeEXIStream).unwrap()(&mut testStrm as *mut _);
+        assert_eq!(ec, 0);
     }
 }
 
@@ -8543,6 +8546,9 @@ fn simple_raw() {
                 173, 132, 8, 42, 9, 32
             ],
             std::slice::from_raw_parts(testStrm.buffer.buf as *mut u8, testStrm.buffer.bufContent)
-        )
+        );
+
+        let ec = (serialize.closeEXIStream).unwrap()(&mut testStrm as *mut _);
+        assert_eq!(ec, 0);
     }
 }
