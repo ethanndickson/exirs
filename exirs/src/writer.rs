@@ -1,9 +1,9 @@
-use std::{ffi::CString, mem::MaybeUninit};
+use std::mem::MaybeUninit;
 
 use ffi::initStream;
 
 use crate::{
-    data::{to_stringtype, Name, SchemalessAttribute},
+    data::{to_stringtype, Name, NamespaceDeclaration, SchemalessAttribute},
     error::EXIPError,
     events::SchemalessEvent,
 };
@@ -11,13 +11,13 @@ use crate::{
 const OUTPUT_BUFFER_SIZE: usize = 8 * 1024;
 
 pub struct SchemalessBuilder {
-    stream: ffi::EXIStream,
+    stream: Box<ffi::EXIStream>,
     _buf: Box<[i8; OUTPUT_BUFFER_SIZE]>,
 }
 
 impl Drop for SchemalessBuilder {
     fn drop(&mut self) {
-        unsafe { ffi::serialize.closeEXIStream.unwrap()(&mut self.stream) };
+        unsafe { ffi::serialize.closeEXIStream.unwrap()(&mut *self.stream) };
     }
 }
 
@@ -48,7 +48,7 @@ impl SchemalessBuilder {
             let ec = initStream(&mut stream as *mut _, buf, std::ptr::null_mut());
             assert_eq!(ec, 0);
             Self {
-                stream: stream,
+                stream: Box::new(stream),
                 _buf: heap_buf,
             }
         }
@@ -62,13 +62,8 @@ impl SchemalessBuilder {
             SchemalessEvent::EndElement => end_element(&mut self.stream),
             SchemalessEvent::Attribute(attr) => schemaless_attribute(&mut self.stream, attr),
             SchemalessEvent::Characters(str) => characters(&mut self.stream, str),
-            SchemalessEvent::NamespaceDeclaration {
-                namespace,
-                prefix,
-                is_local,
-            } => todo!(),
+            SchemalessEvent::NamespaceDeclaration(ns) => namespace(&mut self.stream, ns),
             SchemalessEvent::ExiHeader => header(&mut self.stream),
-            SchemalessEvent::SelfContained => todo!(),
         }
     }
 
@@ -79,6 +74,12 @@ impl SchemalessBuilder {
                 self.stream.buffer.bufContent,
             )
         }
+    }
+}
+
+impl Default for SchemalessBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -100,7 +101,7 @@ fn end_document(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
     }
 }
 
-fn start_element<'a>(stream: &mut ffi::EXIStream, name: Name<'a>) -> Result<(), EXIPError> {
+fn start_element(stream: &mut ffi::EXIStream, name: Name) -> Result<(), EXIPError> {
     unsafe {
         let qname = ffi::QName {
             uri: &to_stringtype(name.namespace),
@@ -153,12 +154,7 @@ fn schemaless_attribute(
 
 fn characters(stream: &mut ffi::EXIStream, characters: &str) -> Result<(), EXIPError> {
     unsafe {
-        let mut chval = ffi::StringType::empty();
-        let tmp = CString::new(characters).unwrap();
-        match ffi::asciiToString(tmp.as_ptr(), &mut chval as *mut _, &mut stream.memList, 0) {
-            0 => Ok::<(), EXIPError>(()),
-            e => Err(e.into()),
-        }?;
+        let chval = to_stringtype(characters);
         match ffi::serialize.stringData.unwrap()(stream as *mut _, chval) {
             0 => Ok(()),
             e => Err(e.into()),
@@ -169,6 +165,22 @@ fn characters(stream: &mut ffi::EXIStream, characters: &str) -> Result<(), EXIPE
 fn header(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
     unsafe {
         match ffi::serialize.exiHeader.unwrap()(stream as *mut _) {
+            0 => Ok(()),
+            e => Err(e.into()),
+        }
+    }
+}
+
+fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(), EXIPError> {
+    unsafe {
+        let ns = to_stringtype(dec.namespace);
+        let prefix = to_stringtype(dec.prefix);
+        match ffi::serialize.namespaceDeclaration.unwrap()(
+            stream,
+            ns,
+            prefix,
+            dec.is_local_element as u32,
+        ) {
             0 => Ok(()),
             e => Err(e.into()),
         }

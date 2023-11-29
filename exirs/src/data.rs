@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::SystemTime};
+use std::time::SystemTime;
 
 use ffi::StringType;
 
@@ -6,6 +6,13 @@ use ffi::StringType;
 pub struct SchemalessAttribute<'a> {
     pub key: Name<'a>,
     pub value: &'a str,
+}
+
+#[derive(Debug)]
+pub struct NamespaceDeclaration<'a> {
+    pub namespace: &'a str,
+    pub prefix: &'a str,
+    pub is_local_element: bool,
 }
 
 #[derive(Debug)]
@@ -32,7 +39,7 @@ pub enum SchemaValue<'a> {
     List(&'a [SchemaValue<'a>]),
 }
 
-pub(crate) fn to_stringtype<'a>(str: &'a str) -> ffi::StringType {
+pub(crate) fn to_stringtype(str: &str) -> ffi::StringType {
     StringType {
         str_: str.as_ptr() as *mut _,
         length: str.len(),

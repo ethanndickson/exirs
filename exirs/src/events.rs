@@ -1,24 +1,22 @@
-use crate::data::{Name, SchemaAttribute, SchemalessAttribute};
+use crate::data::{Name, NamespaceDeclaration, SchemaAttribute, SchemaValue, SchemalessAttribute};
 
 #[derive(Debug)]
 #[non_exhaustive]
-// No processingInstruction support
+// No processingInstruction or selfContained support
 pub enum SchemalessEvent<'a> {
     StartDocument,
     EndDocument,
     StartElement(Name<'a>),
     EndElement,
     Attribute(SchemalessAttribute<'a>),
-    NamespaceDeclaration {
-        namespace: &'a str,
-        prefix: &'a str,
-        is_local: bool,
-    },
+    NamespaceDeclaration(NamespaceDeclaration<'a>),
     ExiHeader,
-    SelfContained,
     Characters(&'a str),
 }
 
+#[derive(Debug)]
+#[non_exhaustive]
+// No processingInstruction or selfContained support
 pub enum SchemaEvent<'a> {
     StartDocument,
     EndDocument,
@@ -31,5 +29,5 @@ pub enum SchemaEvent<'a> {
         is_local: bool,
     },
     ExiHeader,
-    SelfContained,
+    Value(SchemaValue<'a>),
 }
