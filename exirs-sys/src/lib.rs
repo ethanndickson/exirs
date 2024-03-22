@@ -7935,7 +7935,7 @@ fn encodeTestEXI() {
         assert_eq!(valueType, 0);
 
         let mut chVal = nullstr_c.clone();
-        let fiftyfive = CString::new("55").unwrap();
+        let fiftyfive = c"55";
         let ec = asciiToString(
             fiftyfive.as_ptr(),
             &mut chVal as *mut _,
@@ -7968,7 +7968,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let pointtwo = CString::new("0.2").unwrap();
+        let pointtwo = c"0.2";
         let ec = asciiToString(
             pointtwo.as_ptr(),
             &mut chVal as *mut _,
@@ -7984,9 +7984,7 @@ fn encodeTestEXI() {
         let ec = (serialize.stringData).unwrap()(&mut testStrm as *mut _, chVal);
         assert_eq!(ec, 0);
 
-        let example =
-            CString::new("This is an example of serializing EXI streams using EXIP low level API")
-                .unwrap();
+        let example = c"This is an example of serializing EXI streams using EXIP low level API";
         let ec = asciiToString(
             example.as_ptr(),
             &mut chVal as *mut _,
@@ -8028,8 +8026,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let test = CString::new("This is a test of processing XML schemes with multiple XSD files")
-            .unwrap();
+        let test = c"This is a test of processing XML schemes with multiple XSD files";
         let ec = asciiToString(
             test.as_ptr(),
             &mut chVal as *mut _,
@@ -8091,7 +8088,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let verify = CString::new("Verify that the implementation works!").unwrap();
+        let verify = c"Verify that the implementation works!";
         let ec = asciiToString(
             verify.as_ptr(),
             &mut chVal as *mut _,
@@ -8111,7 +8108,7 @@ fn encodeTestEXI() {
         let ec = (serialize.stringData).unwrap()(&mut testStrm as *mut _, chVal);
         assert_eq!(ec, 0);
 
-        let simple = CString::new("Simple test element with single attribute").unwrap();
+        let simple = c"Simple test element with single attribute";
         let ec = asciiToString(
             simple.as_ptr(),
             &mut chVal as *mut _,
@@ -8169,7 +8166,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let id = CString::new("1001").unwrap();
+        let id = c"1001";
         let ec = asciiToString(
             id.as_ptr(),
             &mut chVal as *mut _,
@@ -8205,7 +8202,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let t = CString::new("true").unwrap();
+        let t = c"true";
         let ec = asciiToString(
             t.as_ptr(),
             &mut chVal as *mut _,
@@ -8262,7 +8259,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let eleven = CString::new("11").unwrap();
+        let eleven = c"11";
         let ec = asciiToString(
             eleven.as_ptr(),
             &mut chVal as *mut _,
@@ -8299,7 +8296,7 @@ fn encodeTestEXI() {
         assert_eq!(ec, 0);
         assert_eq!(valueType, 0);
 
-        let time = CString::new("2012 Jul 31 13:33").unwrap();
+        let time = c"2012 Jul 31 13:33";
         let ec = asciiToString(
             time.as_ptr(),
             &mut chVal as *mut _,
@@ -8505,9 +8502,7 @@ fn simple_raw() {
         assert_eq!(ec, 0);
 
         let mut chVal = nullstr_c.clone();
-        let example =
-            CString::new("This is an example of serializing EXI streams using EXIP low level API")
-                .unwrap();
+        let example = c"This is an example of serializing EXI streams using EXIP low level API";
         let ec = asciiToString(
             example.as_ptr(),
             &mut chVal as *mut _,
