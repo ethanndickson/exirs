@@ -24,30 +24,27 @@ impl Drop for SchemalessBuilder {
 
 impl SchemalessBuilder {
     pub fn new(header: EXIHeader) -> Self {
-        unsafe {
-            let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
-            (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr());
-            let ptr = stream.as_mut_ptr();
-            header.apply_to_stream(ptr);
-            let mut stream = stream.assume_init();
+        let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
+        unsafe { (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr()) };
+        let ptr = stream.as_mut_ptr();
+        header.apply_to_stream(ptr);
+        let mut stream = unsafe { stream.assume_init() };
 
-            let mut heap_buf = Box::new([0; OUTPUT_BUFFER_SIZE]); // 8KiB
-            let buf = ffi::BinaryBuffer {
-                buf: heap_buf.as_mut_ptr(),
-                bufLen: OUTPUT_BUFFER_SIZE,
-                bufContent: 0,
-                ioStrm: ffi::ioStream {
-                    readWriteToStream: None,
-                    stream: std::ptr::null_mut(),
-                },
-            };
-
-            let ec = initStream(&mut stream as *mut _, buf, std::ptr::null_mut());
-            assert_eq!(ec, 0);
-            Self {
-                stream: Box::new(stream),
-                _buf: heap_buf,
-            }
+        let mut heap_buf = Box::new([0; OUTPUT_BUFFER_SIZE]); // 8KiB
+        let buf = ffi::BinaryBuffer {
+            buf: heap_buf.as_mut_ptr(),
+            bufLen: OUTPUT_BUFFER_SIZE,
+            bufContent: 0,
+            ioStrm: ffi::ioStream {
+                readWriteToStream: None,
+                stream: std::ptr::null_mut(),
+            },
+        };
+        let ec = unsafe { initStream(&mut stream as *mut _, buf, std::ptr::null_mut()) };
+        assert_eq!(ec, 0);
+        Self {
+            stream: Box::new(stream),
+            _buf: heap_buf,
         }
     }
 
@@ -99,16 +96,16 @@ fn end_document(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
 }
 
 fn start_element(stream: &mut ffi::EXIStream, name: Name) -> Result<(), EXIPError> {
+    let qname = ffi::QName {
+        uri: &to_stringtype(name.namespace),
+        localName: &to_stringtype(name.local_name),
+        prefix: match name.prefix {
+            Some(n) => &to_stringtype(n),
+            None => std::ptr::null(),
+        },
+    };
+    let mut vt = 0;
     unsafe {
-        let qname = ffi::QName {
-            uri: &to_stringtype(name.namespace),
-            localName: &to_stringtype(name.local_name),
-            prefix: match name.prefix {
-                Some(n) => &to_stringtype(n),
-                None => std::ptr::null(),
-            },
-        };
-        let mut vt = 0;
         match ffi::serialize.startElement.unwrap()(stream as *mut _, qname, &mut vt) {
             0 => Ok(()),
             e => Err(e.into()),
@@ -129,24 +126,23 @@ fn schemaless_attribute(
     stream: &mut ffi::EXIStream,
     attr: SchemalessAttribute,
 ) -> Result<(), EXIPError> {
+    let qname = ffi::QName {
+        uri: &to_stringtype(attr.key.namespace),
+        localName: &to_stringtype(attr.key.local_name),
+        prefix: match attr.key.prefix {
+            Some(n) => &to_stringtype(n),
+            None => std::ptr::null(),
+        },
+    };
+    let mut vt = 0;
     unsafe {
-        let qname = ffi::QName {
-            uri: &to_stringtype(attr.key.namespace),
-            localName: &to_stringtype(attr.key.local_name),
-            prefix: match attr.key.prefix {
-                Some(n) => &to_stringtype(n),
-                None => std::ptr::null(),
-            },
-        };
-        let mut vt = 0;
         match ffi::serialize.attribute.unwrap()(stream as *mut _, qname, 1, &mut vt) {
             0 => Ok::<(), EXIPError>(()),
             e => Err(e.into()),
-        }?;
-
-        // Get EXIP to allocate
-        characters(stream, attr.value)
-    }
+        }?
+    };
+    // Get EXIP to allocate
+    characters(stream, attr.value)
 }
 
 fn characters(stream: &mut ffi::EXIStream, characters: &str) -> Result<(), EXIPError> {
@@ -169,9 +165,9 @@ fn header(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
 }
 
 fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(), EXIPError> {
+    let ns = to_stringtype(dec.namespace);
+    let prefix = to_stringtype(dec.prefix);
     unsafe {
-        let ns = to_stringtype(dec.namespace);
-        let prefix = to_stringtype(dec.prefix);
         match ffi::serialize.namespaceDeclaration.unwrap()(
             stream,
             ns,
