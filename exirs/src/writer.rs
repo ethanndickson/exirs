@@ -3,6 +3,7 @@ use std::mem::MaybeUninit;
 use ffi::initStream;
 
 use crate::{
+    config::EXIHeader,
     data::{to_stringtype, Name, NamespaceDeclaration, SchemalessAttribute},
     error::EXIPError,
     events::SchemalessEvent,
@@ -22,16 +23,12 @@ impl Drop for SchemalessBuilder {
 }
 
 impl SchemalessBuilder {
-    pub fn new() -> Self {
+    pub fn new(header: EXIHeader) -> Self {
         unsafe {
             let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
             (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr());
             let ptr = stream.as_mut_ptr();
-            (*ptr).header.has_cookie = 1;
-            (*ptr).header.has_options = 1;
-            (*ptr).header.opts.valueMaxLength = 300;
-            (*ptr).header.opts.valuePartitionCapacity = 50;
-            (*ptr).header.opts.enumOpt |= 2; // set strict
+            header.apply_to_stream(ptr);
             let mut stream = stream.assume_init();
 
             let mut heap_buf = Box::new([0; OUTPUT_BUFFER_SIZE]); // 8KiB
@@ -79,7 +76,7 @@ impl SchemalessBuilder {
 
 impl Default for SchemalessBuilder {
     fn default() -> Self {
-        Self::new()
+        Self::new(EXIHeader::default())
     }
 }
 
@@ -189,7 +186,15 @@ fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(
 
 #[test]
 fn simple() {
-    let mut builder = SchemalessBuilder::new();
+    use crate::config::EXIOptionFlags;
+
+    let mut header = EXIHeader::default();
+    header.has_cookie = true;
+    header.has_options = true;
+    header.opts.value_max_length = 300;
+    header.opts.value_partition_capacity = 50;
+    header.opts.flags.insert(EXIOptionFlags::STRICT);
+    let mut builder = SchemalessBuilder::new(header);
     builder.add(SchemalessEvent::ExiHeader).unwrap();
     builder.add(SchemalessEvent::StartDocument).unwrap();
     builder
