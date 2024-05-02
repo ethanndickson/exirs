@@ -55,7 +55,7 @@ impl SchemalessBuilder {
             SchemalessEvent::StartElement(name) => start_element(&mut self.stream, name),
             SchemalessEvent::EndElement => end_element(&mut self.stream),
             SchemalessEvent::Attribute(attr) => schemaless_attribute(&mut self.stream, attr),
-            SchemalessEvent::Characters(str) => characters(&mut self.stream, str),
+            SchemalessEvent::Characters(str) => characters(&mut self.stream, &str),
             SchemalessEvent::NamespaceDeclaration(ns) => namespace(&mut self.stream, ns),
             SchemalessEvent::ExiHeader => header(&mut self.stream),
         }
@@ -97,10 +97,10 @@ fn end_document(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
 
 fn start_element(stream: &mut ffi::EXIStream, name: Name) -> Result<(), EXIPError> {
     let qname = ffi::QName {
-        uri: &to_stringtype(name.namespace),
-        localName: &to_stringtype(name.local_name),
+        uri: &to_stringtype(&name.namespace),
+        localName: &to_stringtype(&name.local_name),
         prefix: match name.prefix {
-            Some(n) => &to_stringtype(n),
+            Some(n) => &to_stringtype(&n),
             None => std::ptr::null(),
         },
     };
@@ -127,10 +127,10 @@ fn schemaless_attribute(
     attr: SchemalessAttribute,
 ) -> Result<(), EXIPError> {
     let qname = ffi::QName {
-        uri: &to_stringtype(attr.key.namespace),
-        localName: &to_stringtype(attr.key.local_name),
+        uri: &to_stringtype(&attr.key.namespace),
+        localName: &to_stringtype(&attr.key.local_name),
         prefix: match attr.key.prefix {
-            Some(n) => &to_stringtype(n),
+            Some(n) => &to_stringtype(&n),
             None => std::ptr::null(),
         },
     };
@@ -142,7 +142,7 @@ fn schemaless_attribute(
         }?
     };
     // Get EXIP to allocate
-    characters(stream, attr.value)
+    characters(stream, &attr.value)
 }
 
 fn characters(stream: &mut ffi::EXIStream, characters: &str) -> Result<(), EXIPError> {
@@ -165,8 +165,8 @@ fn header(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
 }
 
 fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(), EXIPError> {
-    let ns = to_stringtype(dec.namespace);
-    let prefix = to_stringtype(dec.prefix);
+    let ns = to_stringtype(&dec.namespace);
+    let prefix = to_stringtype(&dec.prefix);
     unsafe {
         match ffi::serialize.namespaceDeclaration.unwrap()(
             stream,
@@ -181,7 +181,7 @@ fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(
 }
 
 #[test]
-fn simple() {
+fn simple_write() {
     use crate::config::EXIOptionFlags;
 
     let mut header = EXIHeader::default();

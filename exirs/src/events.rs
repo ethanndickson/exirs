@@ -14,7 +14,7 @@ pub enum SchemalessEvent<'a> {
     Characters(&'a str),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 // No processingInstruction or selfContained support
 pub enum SchemaEvent<'a> {
