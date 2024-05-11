@@ -4,14 +4,13 @@ use std::{
 };
 
 use crate::{
-    data::{from_qname, from_stringtype, SchemaValue},
+    data::{from_qname, from_stringtype, Event, Value},
     error::EXIPError,
-    events::SchemaEvent,
 };
 
 #[derive(Default)]
 struct Handler<'a> {
-    latest: Option<SchemaEvent<'a>>,
+    latest: Option<Event<'a>>,
 }
 
 impl<'a> Handler<'a> {
@@ -24,12 +23,12 @@ impl<'a> Handler<'a> {
     }
 
     fn start_document(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(SchemaEvent::StartDocument);
+        self.latest = Some(Event::StartDocument);
         Ok(())
     }
 
     fn end_document(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(SchemaEvent::EndDocument);
+        self.latest = Some(Event::EndDocument);
         Ok(())
     }
 
@@ -37,12 +36,12 @@ impl<'a> Handler<'a> {
         &mut self,
         name: crate::data::Name<'a>,
     ) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(SchemaEvent::StartElement(name));
+        self.latest = Some(Event::StartElement(name));
         Ok(())
     }
 
     fn end_element(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(SchemaEvent::EndElement);
+        self.latest = Some(Event::EndElement);
         Ok(())
     }
 
@@ -51,7 +50,7 @@ impl<'a> Handler<'a> {
     }
 
     fn string(&mut self, value: &'a str) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(SchemaEvent::Value(SchemaValue::String(value)));
+        self.latest = Some(Event::Value(Value::String(value)));
         Ok(())
     }
 
@@ -122,7 +121,7 @@ impl<'a> Reader<'a> {
                 stream: std::ptr::null_mut(),
             },
         };
-        let handler = Box::new(Handler::default());
+        let handler = Box::<Handler>::default();
         let ec = unsafe {
             (ffi::parse.initParser).unwrap()(
                 parser.as_mut_ptr(),
@@ -153,15 +152,15 @@ impl<'a> Drop for Reader<'a> {
 }
 
 impl<'a> Iterator for Reader<'a> {
-    type Item = Result<SchemaEvent<'a>, EXIPError>;
+    type Item = Result<Event<'a>, EXIPError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // StartDocument is returned before parseNext is called
-        if let Some(SchemaEvent::StartDocument) = self.handler.latest {
+        if let Some(Event::StartDocument) = self.handler.latest {
             return Some(Ok(self.handler.latest.take().unwrap()));
         }
         // EndDocument is only returned once
-        if let Some(SchemaEvent::EndDocument) = self.handler.latest {
+        if let Some(Event::EndDocument) = self.handler.latest {
             return None;
         }
         let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut() as *mut _) };
@@ -358,10 +357,10 @@ fn simple_read() {
         4, 13, 141, 238, 228, 13, 140, 174, 204, 173, 132, 8, 42, 9, 32,
     ];
     let mut reader = Reader::new(input);
-    assert_eq!(reader.next(), Some(Ok(SchemaEvent::StartDocument)));
+    assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
-        Some(Ok(SchemaEvent::StartElement(Name {
+        Some(Ok(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None
@@ -369,11 +368,11 @@ fn simple_read() {
     );
     assert_eq!(
         reader.next(),
-        Some(Ok(SchemaEvent::Value(SchemaValue::String(
+        Some(Ok(Event::Value(Value::String(
             "This is an example of serializing EXI streams using EXIP low level API"
         ))))
     );
-    assert_eq!(reader.next(), Some(Ok(SchemaEvent::EndElement)));
-    assert_eq!(reader.next(), Some(Ok(SchemaEvent::EndDocument)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndDocument)));
     assert_eq!(reader.next(), None);
 }

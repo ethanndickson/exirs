@@ -4,8 +4,8 @@ use ffi::EXIStream;
 use crate::data::to_stringtype;
 
 #[non_exhaustive]
-pub struct EXIOptions {
-    pub flags: EXIOptionFlags,
+pub struct Options {
+    pub flags: OptionFlags,
     pub preserve: PreservationFlags,
     pub schema_id_mode: SchemaIdMode,
     pub schema_id: Option<String>,
@@ -14,10 +14,10 @@ pub struct EXIOptions {
     pub value_partition_capacity: usize,
 }
 
-impl Default for EXIOptions {
+impl Default for Options {
     fn default() -> Self {
         Self {
-            flags: EXIOptionFlags::empty(),
+            flags: OptionFlags::empty(),
             preserve: PreservationFlags::empty(),
             schema_id_mode: SchemaIdMode::Absent,
             schema_id: None,
@@ -30,7 +30,7 @@ impl Default for EXIOptions {
 }
 
 bitflags! {
-    pub struct EXIOptionFlags: u8 {
+    pub struct OptionFlags: u8 {
         const ALIGNMENT = 0xc0;
         const COMPRESSION = 0x01;
         const STRICT = 0x02;
@@ -58,15 +58,15 @@ pub enum SchemaIdMode {
     Empty,
 }
 
-pub struct EXIHeader {
+pub struct Header {
     pub has_cookie: bool,
     pub has_options: bool,
     pub is_preview_version: bool,
     pub version_number: i16,
-    pub opts: EXIOptions,
+    pub opts: Options,
 }
 
-impl EXIHeader {
+impl Header {
     pub(crate) fn apply_to_stream(self, ptr: *mut EXIStream) {
         unsafe {
             (*ptr).header.has_cookie = self.has_cookie as u32;
@@ -76,7 +76,7 @@ impl EXIHeader {
             (*ptr).header.opts.enumOpt = self.opts.flags.bits();
             (*ptr).header.opts.preserve = self.opts.preserve.bits();
             (*ptr).header.opts.schemaIDMode = self.opts.schema_id_mode as u32;
-            // We repesent no schema ID as None, exip expects empty string
+            // We repesent no schema ID as Option::None, exip wants an empty string
             (*ptr).header.opts.schemaID =
                 to_stringtype(self.opts.schema_id.unwrap_or("".to_owned()).as_str());
             (*ptr).header.opts.blockSize = self.opts.blocksize;
@@ -87,7 +87,7 @@ impl EXIHeader {
     }
 }
 
-impl Default for EXIHeader {
+impl Default for Header {
     fn default() -> Self {
         Self {
             has_cookie: false,

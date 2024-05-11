@@ -3,27 +3,28 @@ use std::mem::MaybeUninit;
 use ffi::initStream;
 
 use crate::{
-    config::EXIHeader,
-    data::{to_stringtype, Name, NamespaceDeclaration, SchemalessAttribute},
+    config::Header,
+    data::{to_qname, to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
-    events::SchemalessEvent,
 };
 
 const OUTPUT_BUFFER_SIZE: usize = 8 * 1024;
 
-pub struct SchemalessBuilder {
+pub struct Writer {
+    uses_schema: bool,
+    cur_tc: Box<ffi::EXITypeClass>,
     stream: Box<ffi::EXIStream>,
     _buf: Box<[i8; OUTPUT_BUFFER_SIZE]>,
 }
 
-impl Drop for SchemalessBuilder {
+impl Drop for Writer {
     fn drop(&mut self) {
         unsafe { ffi::serialize.closeEXIStream.unwrap()(&mut *self.stream) };
     }
 }
 
-impl SchemalessBuilder {
-    pub fn new(header: EXIHeader) -> Self {
+impl Writer {
+    pub fn new(header: Header) -> Self {
         let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
         unsafe { (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr()) };
         let ptr = stream.as_mut_ptr();
@@ -45,19 +46,22 @@ impl SchemalessBuilder {
         Self {
             stream: Box::new(stream),
             _buf: heap_buf,
+            uses_schema: false,
+            // Doesn't get read before it's written to by EXIP
+            cur_tc: Box::new(0),
         }
     }
 
-    pub fn add(&mut self, event: SchemalessEvent) -> Result<(), EXIPError> {
+    pub fn add(&mut self, event: Event) -> Result<(), EXIPError> {
         match event {
-            SchemalessEvent::StartDocument => start_document(&mut self.stream),
-            SchemalessEvent::EndDocument => end_document(&mut self.stream),
-            SchemalessEvent::StartElement(name) => start_element(&mut self.stream, name),
-            SchemalessEvent::EndElement => end_element(&mut self.stream),
-            SchemalessEvent::Attribute(attr) => schemaless_attribute(&mut self.stream, attr),
-            SchemalessEvent::Characters(str) => characters(&mut self.stream, &str),
-            SchemalessEvent::NamespaceDeclaration(ns) => namespace(&mut self.stream, ns),
-            SchemalessEvent::ExiHeader => header(&mut self.stream),
+            Event::StartDocument => self.start_document(),
+            Event::EndDocument => self.end_document(),
+            Event::StartElement(name) => self.start_element(name),
+            Event::EndElement => self.end_element(),
+            Event::Attribute(attr) => self.attribute(attr),
+            Event::Value(val) => self.value(val),
+            Event::NamespaceDeclaration(ns) => self.namespace(ns),
+            Event::ExiHeader => self.header(),
         }
     }
 
@@ -69,144 +73,147 @@ impl SchemalessBuilder {
             )
         }
     }
+
+    fn value(&mut self, value: Value) -> Result<(), EXIPError> {
+        if self.uses_schema {
+            todo!()
+        } else {
+            match value {
+                Value::String(str) => self.characters(str),
+                other => self.characters(&other.to_string()),
+            }
+        }
+    }
+
+    fn start_document(&mut self) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.startDocument.unwrap()(self.stream.as_mut()) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn end_document(&mut self) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.endDocument.unwrap()(self.stream.as_mut()) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn start_element(&mut self, name: Name) -> Result<(), EXIPError> {
+        let qname = ffi::QName {
+            uri: &to_stringtype(name.namespace),
+            localName: &to_stringtype(name.local_name),
+            prefix: match name.prefix {
+                Some(n) => &to_stringtype(n),
+                None => std::ptr::null(),
+            },
+        };
+        let mut vt = 0;
+        unsafe {
+            match ffi::serialize.startElement.unwrap()(self.stream.as_mut(), qname, &mut vt) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn end_element(&mut self) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.endElement.unwrap()(self.stream.as_mut()) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn characters(&mut self, characters: &str) -> Result<(), EXIPError> {
+        unsafe {
+            let chval = to_stringtype(characters);
+            match ffi::serialize.stringData.unwrap()(self.stream.as_mut(), chval) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn attribute(&mut self, attr: Attribute) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.attribute.unwrap()(
+                self.stream.as_mut(),
+                to_qname(attr.key),
+                self.uses_schema as u32,
+                self.cur_tc.as_mut(),
+            ) {
+                0 => Ok::<(), EXIPError>(()),
+                e => Err(e.into()),
+            }?
+        }
+        self.value(attr.value)
+    }
+
+    fn header(&mut self) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.exiHeader.unwrap()(self.stream.as_mut()) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn namespace(&mut self, dec: NamespaceDeclaration) -> Result<(), EXIPError> {
+        let ns = to_stringtype(dec.namespace);
+        let prefix = to_stringtype(dec.prefix);
+        unsafe {
+            match ffi::serialize.namespaceDeclaration.unwrap()(
+                self.stream.as_mut(),
+                ns,
+                prefix,
+                dec.is_local_element as u32,
+            ) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
 }
 
-impl Default for SchemalessBuilder {
+impl Default for Writer {
     fn default() -> Self {
-        Self::new(EXIHeader::default())
-    }
-}
-
-fn start_document(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
-    unsafe {
-        match ffi::serialize.startDocument.unwrap()(stream as *mut _) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn end_document(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
-    unsafe {
-        match ffi::serialize.endDocument.unwrap()(stream as *mut _) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn start_element(stream: &mut ffi::EXIStream, name: Name) -> Result<(), EXIPError> {
-    let qname = ffi::QName {
-        uri: &to_stringtype(&name.namespace),
-        localName: &to_stringtype(&name.local_name),
-        prefix: match name.prefix {
-            Some(n) => &to_stringtype(&n),
-            None => std::ptr::null(),
-        },
-    };
-    let mut vt = 0;
-    unsafe {
-        match ffi::serialize.startElement.unwrap()(stream as *mut _, qname, &mut vt) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn end_element(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
-    unsafe {
-        match ffi::serialize.endElement.unwrap()(stream as *mut _) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn schemaless_attribute(
-    stream: &mut ffi::EXIStream,
-    attr: SchemalessAttribute,
-) -> Result<(), EXIPError> {
-    let qname = ffi::QName {
-        uri: &to_stringtype(&attr.key.namespace),
-        localName: &to_stringtype(&attr.key.local_name),
-        prefix: match attr.key.prefix {
-            Some(n) => &to_stringtype(&n),
-            None => std::ptr::null(),
-        },
-    };
-    let mut vt = 0;
-    unsafe {
-        match ffi::serialize.attribute.unwrap()(stream as *mut _, qname, 1, &mut vt) {
-            0 => Ok::<(), EXIPError>(()),
-            e => Err(e.into()),
-        }?
-    };
-    // Get EXIP to allocate
-    characters(stream, &attr.value)
-}
-
-fn characters(stream: &mut ffi::EXIStream, characters: &str) -> Result<(), EXIPError> {
-    unsafe {
-        let chval = to_stringtype(characters);
-        match ffi::serialize.stringData.unwrap()(stream as *mut _, chval) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn header(stream: &mut ffi::EXIStream) -> Result<(), EXIPError> {
-    unsafe {
-        match ffi::serialize.exiHeader.unwrap()(stream as *mut _) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
-    }
-}
-
-fn namespace(stream: &mut ffi::EXIStream, dec: NamespaceDeclaration) -> Result<(), EXIPError> {
-    let ns = to_stringtype(&dec.namespace);
-    let prefix = to_stringtype(&dec.prefix);
-    unsafe {
-        match ffi::serialize.namespaceDeclaration.unwrap()(
-            stream,
-            ns,
-            prefix,
-            dec.is_local_element as u32,
-        ) {
-            0 => Ok(()),
-            e => Err(e.into()),
-        }
+        Self::new(Header::default())
     }
 }
 
 #[test]
 fn simple_write() {
-    use crate::config::EXIOptionFlags;
+    use crate::config::OptionFlags;
 
-    let mut header = EXIHeader::default();
+    let mut header = Header::default();
     header.has_cookie = true;
     header.has_options = true;
     header.opts.value_max_length = 300;
     header.opts.value_partition_capacity = 50;
-    header.opts.flags.insert(EXIOptionFlags::STRICT);
-    let mut builder = SchemalessBuilder::new(header);
-    builder.add(SchemalessEvent::ExiHeader).unwrap();
-    builder.add(SchemalessEvent::StartDocument).unwrap();
+    header.opts.flags.insert(OptionFlags::STRICT);
+    let mut builder = Writer::new(header);
+    builder.add(Event::ExiHeader).unwrap();
+    builder.add(Event::StartDocument).unwrap();
     builder
-        .add(SchemalessEvent::StartElement(Name {
+        .add(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None,
         }))
         .unwrap();
     builder
-        .add(SchemalessEvent::Characters(
+        .add(Event::Value(Value::String(
             "This is an example of serializing EXI streams using EXIP low level API",
-        ))
+        )))
         .unwrap();
-    builder.add(SchemalessEvent::EndElement).unwrap();
-    builder.add(SchemalessEvent::EndDocument).unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder.add(Event::EndDocument).unwrap();
     assert_eq!(
         [
             36, 69, 88, 73, 160, 2, 172, 2, 12, 178, 18, 52, 58, 58, 56, 29, 23, 151, 187, 187,

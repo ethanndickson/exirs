@@ -8,36 +8,37 @@ The library is currently a WIP, and only supports reading and writing schemaless
 # Examples
 Writing a simple schemaless document:
 ```rust
-use exirs::config::{EXIHeader, EXIOptionFlags};
-use exirs::data::Name;
-use exirs::events::SchemalessEvent;
-use exirs::writer::SchemalessBuilder;
+use exirs::{
+    config::{Header, OptionFlags},
+    data::{Event, Name, Value},
+    Writer,
+};
 
 fn main() {
-    let mut header = EXIHeader::default();
+    let mut header = Header::default();
     header.has_cookie = true;
     header.has_options = true;
     header.opts.value_max_length = 300;
     header.opts.value_partition_capacity = 50;
-    header.opts.flags.insert(EXIOptionFlags::STRICT);
-    let mut builder = SchemalessBuilder::new(header);
-    builder.add(SchemalessEvent::ExiHeader).unwrap();
-    builder.add(SchemalessEvent::StartDocument).unwrap();
+    header.opts.flags.insert(OptionFlags::STRICT);
+    let mut builder = Writer::new(header);
+    builder.add(Event::ExiHeader).unwrap();
+    builder.add(Event::StartDocument).unwrap();
     builder
-        .add(SchemalessEvent::StartElement(Name {
+        .add(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None,
         }))
         .unwrap();
     builder
-        .add(SchemalessEvent::Characters(
+        .add(Event::Value(Value::String(
             "This is an example of serializing EXI streams using EXIP low level API",
-        ))
+        )))
         .unwrap();
-    builder.add(SchemalessEvent::EndElement).unwrap();
-    builder.add(SchemalessEvent::EndDocument).unwrap();
-    println!("{:?}",builder.get());
+    builder.add(Event::EndElement).unwrap();
+    builder.add(Event::EndDocument).unwrap();
+    println!("{:?}", builder.get());
 }
 ```
 
