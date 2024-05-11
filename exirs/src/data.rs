@@ -11,9 +11,9 @@ pub enum Event<'a> {
     EndDocument,
     StartElement(Name<'a>),
     EndElement,
+    TypeAttribute(Name<'a>),
     Attribute(Attribute<'a>),
     NamespaceDeclaration(NamespaceDeclaration<'a>),
-    ExiHeader,
     Value(Value<'a>),
 }
 

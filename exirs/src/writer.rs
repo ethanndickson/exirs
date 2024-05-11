@@ -1,6 +1,4 @@
-use std::mem::MaybeUninit;
-
-use ffi::initStream;
+use std::{mem::MaybeUninit, time::SystemTime};
 
 use crate::{
     config::Header,
@@ -24,7 +22,7 @@ impl Drop for Writer {
 }
 
 impl Writer {
-    pub fn new(header: Header) -> Self {
+    pub fn new(header: Header) -> Result<Self, EXIPError> {
         let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
         unsafe { (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr()) };
         let ptr = stream.as_mut_ptr();
@@ -41,15 +39,22 @@ impl Writer {
                 stream: std::ptr::null_mut(),
             },
         };
-        let ec = unsafe { initStream(&mut stream as *mut _, buf, std::ptr::null_mut()) };
-        assert_eq!(ec, 0);
-        Self {
+        let ec = unsafe { ffi::initStream(&mut stream as *mut _, buf, std::ptr::null_mut()) };
+        if ec != 0 {
+            return Err(ec.into());
+        }
+        let mut out = Self {
             stream: Box::new(stream),
             _buf: heap_buf,
             uses_schema: false,
             // Doesn't get read before it's written to by EXIP
             cur_tc: Box::new(0),
+        };
+        let ec = unsafe { ffi::serialize.exiHeader.unwrap()(out.stream.as_mut()) };
+        if ec != 0 {
+            return Err(ec.into());
         }
+        Ok(out)
     }
 
     pub fn add(&mut self, event: Event) -> Result<(), EXIPError> {
@@ -61,7 +66,7 @@ impl Writer {
             Event::Attribute(attr) => self.attribute(attr),
             Event::Value(val) => self.value(val),
             Event::NamespaceDeclaration(ns) => self.namespace(ns),
-            Event::ExiHeader => self.header(),
+            Event::TypeAttribute(name) => self.type_value(name),
         }
     }
 
@@ -76,7 +81,15 @@ impl Writer {
 
     fn value(&mut self, value: Value) -> Result<(), EXIPError> {
         if self.uses_schema {
-            todo!()
+            match value {
+                Value::Integer(int) => self.integer(int),
+                Value::Boolean(bool) => self.boolean(bool),
+                Value::String(str) => self.characters(str),
+                Value::Float(float) => self.float(float),
+                Value::Binary(binary) => self.binary(binary),
+                Value::Timestamp(ts) => self.timestamp(ts),
+                Value::List(list) => self.list(list),
+            }
         } else {
             match value {
                 Value::String(str) => self.characters(str),
@@ -104,17 +117,12 @@ impl Writer {
     }
 
     fn start_element(&mut self, name: Name) -> Result<(), EXIPError> {
-        let qname = ffi::QName {
-            uri: &to_stringtype(name.namespace),
-            localName: &to_stringtype(name.local_name),
-            prefix: match name.prefix {
-                Some(n) => &to_stringtype(n),
-                None => std::ptr::null(),
-            },
-        };
-        let mut vt = 0;
         unsafe {
-            match ffi::serialize.startElement.unwrap()(self.stream.as_mut(), qname, &mut vt) {
+            match ffi::serialize.startElement.unwrap()(
+                self.stream.as_mut(),
+                to_qname(name),
+                self.cur_tc.as_mut(),
+            ) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }
@@ -124,6 +132,40 @@ impl Writer {
     fn end_element(&mut self) -> Result<(), EXIPError> {
         unsafe {
             match ffi::serialize.endElement.unwrap()(self.stream.as_mut()) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn attribute(&mut self, attr: Attribute) -> Result<(), EXIPError> {
+        let ec = unsafe {
+            ffi::serialize.attribute.unwrap()(
+                self.stream.as_mut(),
+                to_qname(attr.key),
+                true as u32,
+                self.cur_tc.as_mut(),
+            )
+        };
+        match ec {
+            0 => Ok::<(), EXIPError>(()),
+            e => Err(e.into()),
+        }?;
+        self.value(attr.value)
+    }
+
+    fn integer(&mut self, int: i64) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.intData.unwrap()(self.stream.as_mut(), int) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn boolean(&mut self, bool: bool) -> Result<(), EXIPError> {
+        unsafe {
+            match ffi::serialize.booleanData.unwrap()(self.stream.as_mut(), bool as u32) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }
@@ -140,24 +182,41 @@ impl Writer {
         }
     }
 
-    fn attribute(&mut self, attr: Attribute) -> Result<(), EXIPError> {
-        unsafe {
-            match ffi::serialize.attribute.unwrap()(
-                self.stream.as_mut(),
-                to_qname(attr.key),
-                self.uses_schema as u32,
-                self.cur_tc.as_mut(),
-            ) {
-                0 => Ok::<(), EXIPError>(()),
-                e => Err(e.into()),
-            }?
-        }
-        self.value(attr.value)
+    fn float(&mut self, float: f64) -> Result<(), EXIPError> {
+        todo!()
     }
 
-    fn header(&mut self) -> Result<(), EXIPError> {
+    fn binary(&mut self, binary: &[u8]) -> Result<(), EXIPError> {
+        todo!()
+    }
+
+    fn timestamp(&mut self, ts: &SystemTime) -> Result<(), EXIPError> {
+        todo!()
+    }
+
+    fn list(&mut self, list: &[Value]) -> Result<(), EXIPError> {
+        todo!()
+    }
+
+    fn type_value(&mut self, name: Name) -> Result<(), EXIPError> {
+        let ec = unsafe {
+            ffi::serialize.attribute.unwrap()(
+                self.stream.as_mut(),
+                to_qname(Name {
+                    local_name: "type",
+                    namespace: "http://www.w3.org/2001/XMLSchema-instance",
+                    prefix: None,
+                }),
+                true as u32,
+                self.cur_tc.as_mut(),
+            )
+        };
+        match ec {
+            0 => Ok::<(), EXIPError>(()),
+            e => Err(e.into()),
+        }?;
         unsafe {
-            match ffi::serialize.exiHeader.unwrap()(self.stream.as_mut()) {
+            match ffi::serialize.qnameData.unwrap()(self.stream.as_mut(), to_qname(name)) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }
@@ -183,7 +242,8 @@ impl Writer {
 
 impl Default for Writer {
     fn default() -> Self {
-        Self::new(Header::default())
+        // Default configuration should never fail
+        Self::new(Header::default()).unwrap()
     }
 }
 
@@ -197,8 +257,7 @@ fn simple_write() {
     header.opts.value_max_length = 300;
     header.opts.value_partition_capacity = 50;
     header.opts.flags.insert(OptionFlags::STRICT);
-    let mut builder = Writer::new(header);
-    builder.add(Event::ExiHeader).unwrap();
+    let mut builder = Writer::new(header).unwrap();
     builder.add(Event::StartDocument).unwrap();
     builder
         .add(Event::StartElement(Name {
