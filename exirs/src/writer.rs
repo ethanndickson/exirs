@@ -64,7 +64,7 @@ impl Writer {
             Event::StartElement(name) => self.start_element(name),
             Event::EndElement => self.end_element(),
             Event::Attribute(attr) => self.attribute(attr),
-            Event::Value(val) => self.value(val),
+            Event::Value(val) => self.value(&val),
             Event::NamespaceDeclaration(ns) => self.namespace(ns),
             Event::TypeAttribute(name) => self.type_value(name),
         }
@@ -79,13 +79,13 @@ impl Writer {
         }
     }
 
-    fn value(&mut self, value: Value) -> Result<(), EXIPError> {
+    fn value(&mut self, value: &Value) -> Result<(), EXIPError> {
         if self.uses_schema {
             match value {
-                Value::Integer(int) => self.integer(int),
-                Value::Boolean(bool) => self.boolean(bool),
+                Value::Integer(int) => self.integer(*int),
+                Value::Boolean(bool) => self.boolean(*bool),
                 Value::String(str) => self.characters(str),
-                Value::Float(float) => self.float(float),
+                Value::Float(float) => self.float(*float),
                 Value::Binary(binary) => self.binary(binary),
                 Value::Timestamp(ts) => self.timestamp(ts),
                 Value::List(list) => self.list(list),
@@ -151,7 +151,7 @@ impl Writer {
             0 => Ok::<(), EXIPError>(()),
             e => Err(e.into()),
         }?;
-        self.value(attr.value)
+        self.value(&attr.value)
     }
 
     fn integer(&mut self, int: i64) -> Result<(), EXIPError> {
@@ -183,11 +183,32 @@ impl Writer {
     }
 
     fn float(&mut self, float: f64) -> Result<(), EXIPError> {
-        todo!()
+        let float = float.to_bits();
+        let m = (float & ((1 << 52) - 1)) as i64;
+        let e = ((float >> 52) & 0x7FF) as i16;
+        let float = ffi::EXIFloat {
+            mantissa: m,
+            exponent: e,
+        };
+        unsafe {
+            match ffi::serialize.floatData.unwrap()(self.stream.as_mut(), float) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
     }
 
     fn binary(&mut self, binary: &[u8]) -> Result<(), EXIPError> {
-        todo!()
+        unsafe {
+            match ffi::serialize.binaryData.unwrap()(
+                self.stream.as_mut(),
+                binary.as_ptr() as *const _,
+                binary.len(),
+            ) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
     }
 
     fn timestamp(&mut self, ts: &SystemTime) -> Result<(), EXIPError> {
@@ -195,7 +216,21 @@ impl Writer {
     }
 
     fn list(&mut self, list: &[Value]) -> Result<(), EXIPError> {
-        todo!()
+        unsafe {
+            match ffi::serialize.listData.unwrap()(
+                self.stream.as_mut(),
+                list.len()
+                    .try_into()
+                    .map_err(|_| EXIPError::InvalidEXIInput)?,
+            ) {
+                0 => Ok::<(), EXIPError>(()),
+                e => Err(e.into()),
+            }
+        }?;
+        for each in list {
+            self.value(each)?;
+        }
+        Ok(())
     }
 
     fn type_value(&mut self, name: Name) -> Result<(), EXIPError> {

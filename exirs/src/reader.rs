@@ -54,7 +54,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn decimal(&mut self, value: crate::data::Float) -> Result<(), crate::error::EXIPError> {
+    fn decimal(&mut self, value: ffi::EXIFloat) -> Result<(), crate::error::EXIPError> {
         self.float(value)
     }
 
@@ -78,7 +78,7 @@ impl<'a> Handler<'a> {
         todo!();
     }
 
-    fn float(&mut self, value: crate::data::Float) -> Result<(), EXIPError> {
+    fn float(&mut self, value: ffi::EXIFloat) -> Result<(), EXIPError> {
         todo!();
     }
 

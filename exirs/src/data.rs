@@ -6,6 +6,7 @@ use ffi::StringType;
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 // No processingInstruction or selfContained support
+
 pub enum Event<'a> {
     StartDocument,
     EndDocument,
@@ -35,12 +36,6 @@ pub struct Name<'a> {
     pub local_name: &'a str,
     pub namespace: &'a str,
     pub prefix: Option<&'a str>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Float {
-    pub mantissa: i64,
-    pub exponent: i16,
 }
 
 #[derive(Clone, Debug, PartialEq)]
