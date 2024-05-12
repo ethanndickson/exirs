@@ -14,14 +14,6 @@ struct Handler<'a> {
 }
 
 impl<'a> Handler<'a> {
-    fn fatal_error(
-        &mut self,
-        error: crate::error::EXIPError,
-        message: &str,
-    ) -> Result<(), crate::error::EXIPError> {
-        Err(EXIPError::HandlerStop)
-    }
-
     fn start_document(&mut self) -> Result<(), crate::error::EXIPError> {
         self.latest = Some(Event::StartDocument);
         Ok(())

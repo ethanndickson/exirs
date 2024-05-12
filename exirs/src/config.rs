@@ -14,6 +14,12 @@ pub struct Options {
     pub value_partition_capacity: usize,
 }
 
+impl Options {
+    pub(crate) fn to_raw(self) -> ffi::EXIOptions {
+        todo!()
+    }
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -58,6 +64,7 @@ pub enum SchemaIdMode {
     Empty,
 }
 
+// TODO(ethan): replace pub fields with a builder?
 pub struct Header {
     pub has_cookie: bool,
     pub has_options: bool,
@@ -67,7 +74,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub(crate) fn apply_to_stream(self, ptr: *mut EXIStream) {
+    pub(crate) fn apply(self, ptr: *mut EXIStream) {
         unsafe {
             (*ptr).header.has_cookie = self.has_cookie as u32;
             (*ptr).header.has_options = self.has_options as u32;

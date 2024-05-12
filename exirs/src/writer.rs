@@ -4,6 +4,7 @@ use crate::{
     config::Header,
     data::{to_qname, to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
+    schema::Schema,
 };
 
 const OUTPUT_BUFFER_SIZE: usize = 8 * 1024;
@@ -22,11 +23,11 @@ impl Drop for Writer {
 }
 
 impl Writer {
-    pub fn new(header: Header) -> Result<Self, EXIPError> {
+    pub fn new(header: Header, schema: Option<Schema>) -> Result<Self, EXIPError> {
         let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
         unsafe { (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr()) };
         let ptr = stream.as_mut_ptr();
-        header.apply_to_stream(ptr);
+        header.apply(ptr);
         let mut stream = unsafe { stream.assume_init() };
 
         let mut heap_buf = Box::new([0; OUTPUT_BUFFER_SIZE]); // 8KiB
@@ -39,7 +40,13 @@ impl Writer {
                 stream: std::ptr::null_mut(),
             },
         };
-        let ec = unsafe { ffi::initStream(&mut stream as *mut _, buf, std::ptr::null_mut()) };
+        let ec = unsafe {
+            ffi::initStream(
+                &mut stream as *mut _,
+                buf,
+                schema.map_or(std::ptr::null_mut(), |mut s| s.inner.as_mut()),
+            )
+        };
         if ec != 0 {
             return Err(ec.into());
         }
@@ -278,12 +285,12 @@ impl Writer {
 impl Default for Writer {
     fn default() -> Self {
         // Default configuration should never fail
-        Self::new(Header::default()).unwrap()
+        Self::new(Header::default(), None).unwrap()
     }
 }
 
 #[test]
-fn simple_write() {
+fn simple_schemaless_write() {
     use crate::config::OptionFlags;
 
     let mut header = Header::default();
@@ -292,7 +299,7 @@ fn simple_write() {
     header.opts.value_max_length = 300;
     header.opts.value_partition_capacity = 50;
     header.opts.flags.insert(OptionFlags::STRICT);
-    let mut builder = Writer::new(header).unwrap();
+    let mut builder = Writer::new(header, None).unwrap();
     builder.add(Event::StartDocument).unwrap();
     builder
         .add(Event::StartElement(Name {
@@ -321,4 +328,41 @@ fn simple_write() {
         ],
         builder.get()
     )
+}
+
+#[test]
+fn simple_write() {
+    use crate::config::OptionFlags;
+
+    let mut header = Header::default();
+    header.has_cookie = true;
+    header.has_options = true;
+    header.opts.value_max_length = 300;
+    header.opts.value_partition_capacity = 50;
+    header.opts.flags.insert(OptionFlags::STRICT);
+    let schema = Schema::new(
+        &[
+            "./examples/exipe-test-xsd.exi",
+            "./examples/exipe-test-types-xsd.exi",
+            "./examples/exipe-test-nested-xsd.exi",
+        ],
+        None,
+    )
+    .unwrap();
+    let mut builder = Writer::new(header, Some(schema)).unwrap();
+    builder.add(Event::StartDocument).unwrap();
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "MultipleXSDsTest",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None,
+        }))
+        .unwrap();
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "EXIPEncoder",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None,
+        }))
+        .unwrap();
 }
