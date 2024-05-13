@@ -1,7 +1,6 @@
 use std::{fmt::Display, time::SystemTime};
 
 use base64::Engine;
-use ffi::StringType;
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -72,9 +71,15 @@ impl<'a> Display for Value<'a> {
 }
 
 pub(crate) fn to_stringtype(str: &str) -> ffi::StringType {
-    StringType {
-        str_: str.as_ptr() as *mut _,
-        length: str.len(),
+    match str {
+        "" => ffi::StringType {
+            str_: std::ptr::null_mut(),
+            length: 0,
+        },
+        str => ffi::StringType {
+            str_: str.as_ptr() as *mut _,
+            length: str.len(),
+        },
     }
 }
 
@@ -92,16 +97,5 @@ pub(crate) fn from_qname<'a>(qname: ffi::QName) -> Name<'a> {
         local_name: from_stringtype(qname.localName).unwrap_or_default(),
         namespace: from_stringtype(qname.uri).unwrap_or_default(),
         prefix: from_stringtype(qname.prefix),
-    }
-}
-
-pub(crate) fn to_qname(name: Name) -> ffi::QName {
-    ffi::QName {
-        uri: &to_stringtype(name.namespace),
-        localName: &to_stringtype(name.local_name),
-        prefix: match name.prefix {
-            Some(n) => &to_stringtype(n),
-            None => std::ptr::null(),
-        },
     }
 }

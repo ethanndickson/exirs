@@ -1,5 +1,4 @@
 use bitflags::bitflags;
-use ffi::EXIStream;
 
 use crate::data::to_stringtype;
 
@@ -74,7 +73,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub(crate) fn apply(self, ptr: *mut EXIStream) {
+    pub(crate) fn apply(self, ptr: *mut ffi::EXIStream) {
         unsafe {
             (*ptr).header.has_cookie = self.has_cookie as u32;
             (*ptr).header.has_options = self.has_options as u32;

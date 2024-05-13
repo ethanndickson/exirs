@@ -2,7 +2,7 @@ use std::{mem::MaybeUninit, time::SystemTime};
 
 use crate::{
     config::Header,
-    data::{to_qname, to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
+    data::{to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
     schema::Schema,
 };
@@ -24,6 +24,7 @@ impl Drop for Writer {
 
 impl Writer {
     pub fn new(header: Header, schema: Option<Schema>) -> Result<Self, EXIPError> {
+        let uses_schema = schema.is_some();
         let mut stream: MaybeUninit<ffi::EXIStream> = MaybeUninit::uninit();
         unsafe { (ffi::serialize.initHeader).unwrap()(stream.as_mut_ptr()) };
         let ptr = stream.as_mut_ptr();
@@ -53,7 +54,7 @@ impl Writer {
         let mut out = Self {
             stream: Box::new(stream),
             _buf: heap_buf,
-            uses_schema: false,
+            uses_schema,
             // Doesn't get read before it's written to by EXIP
             cur_tc: Box::new(0),
         };
@@ -124,10 +125,27 @@ impl Writer {
     }
 
     fn start_element(&mut self, name: Name) -> Result<(), EXIPError> {
+        let qname = ffi::QName {
+            uri: &ffi::StringType {
+                str_: name.namespace.as_ptr() as *mut _,
+                length: name.namespace.len(),
+            },
+            localName: &ffi::StringType {
+                str_: name.local_name.as_ptr() as *mut _,
+                length: name.local_name.len(),
+            },
+            prefix: match name.prefix {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => std::ptr::null(),
+            },
+        };
         unsafe {
             match ffi::serialize.startElement.unwrap()(
                 self.stream.as_mut(),
-                to_qname(name),
+                qname,
                 self.cur_tc.as_mut(),
             ) {
                 0 => Ok(()),
@@ -146,10 +164,31 @@ impl Writer {
     }
 
     fn attribute(&mut self, attr: Attribute) -> Result<(), EXIPError> {
+        // Inlined to keep the StringTypes in scope
+        let qname = ffi::QName {
+            uri: &ffi::StringType {
+                str_: match attr.key.namespace {
+                    "" => std::ptr::null_mut(),
+                    ln => ln.as_ptr() as *mut _,
+                },
+                length: attr.key.namespace.len(),
+            },
+            localName: &ffi::StringType {
+                str_: attr.key.local_name.as_ptr() as *mut _,
+                length: attr.key.local_name.len(),
+            },
+            prefix: match attr.key.prefix {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => std::ptr::null(),
+            },
+        };
         let ec = unsafe {
             ffi::serialize.attribute.unwrap()(
                 self.stream.as_mut(),
-                to_qname(attr.key),
+                qname,
                 true as u32,
                 self.cur_tc.as_mut(),
             )
@@ -241,14 +280,32 @@ impl Writer {
     }
 
     fn type_value(&mut self, name: Name) -> Result<(), EXIPError> {
+        let typename = Name {
+            local_name: "type",
+            namespace: "http://www.w3.org/2001/XMLSchema-instance",
+            prefix: None,
+        };
+        let qname = ffi::QName {
+            uri: &ffi::StringType {
+                str_: typename.namespace.as_ptr() as *mut _,
+                length: typename.namespace.len(),
+            },
+            localName: &ffi::StringType {
+                str_: typename.local_name.as_ptr() as *mut _,
+                length: typename.local_name.len(),
+            },
+            prefix: match typename.prefix {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => std::ptr::null(),
+            },
+        };
         let ec = unsafe {
             ffi::serialize.attribute.unwrap()(
                 self.stream.as_mut(),
-                to_qname(Name {
-                    local_name: "type",
-                    namespace: "http://www.w3.org/2001/XMLSchema-instance",
-                    prefix: None,
-                }),
+                qname,
                 true as u32,
                 self.cur_tc.as_mut(),
             )
@@ -257,8 +314,25 @@ impl Writer {
             0 => Ok::<(), EXIPError>(()),
             e => Err(e.into()),
         }?;
+        let qname = ffi::QName {
+            uri: &ffi::StringType {
+                str_: typename.namespace.as_ptr() as *mut _,
+                length: typename.namespace.len(),
+            },
+            localName: &ffi::StringType {
+                str_: typename.local_name.as_ptr() as *mut _,
+                length: typename.local_name.len(),
+            },
+            prefix: match typename.prefix {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => std::ptr::null(),
+            },
+        };
         unsafe {
-            match ffi::serialize.qnameData.unwrap()(self.stream.as_mut(), to_qname(name)) {
+            match ffi::serialize.qnameData.unwrap()(self.stream.as_mut(), qname) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }
@@ -363,6 +437,16 @@ fn simple_write() {
             local_name: "EXIPEncoder",
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None,
+        }))
+        .unwrap();
+    builder
+        .add(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "testByte",
+                namespace: "",
+                prefix: None,
+            },
+            value: Value::Integer(55),
         }))
         .unwrap();
 }
