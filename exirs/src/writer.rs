@@ -365,14 +365,14 @@ fn simple_write() {
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None,
         }))
-        .unwrap();
+        .unwrap(); // <MultipleXSDsTest>
     builder
         .add(Event::StartElement(Name {
             local_name: "EXIPEncoder",
             namespace: "http://www.ltu.se/EISLAB/schema-test",
             prefix: None,
         }))
-        .unwrap();
+        .unwrap(); // <EXIPEncoder>
     builder
         .add(Event::Attribute(Attribute {
             key: Name {
@@ -382,6 +382,84 @@ fn simple_write() {
             },
             value: Value::Integer(55),
         }))
+        .unwrap(); // testByte=55
+    builder
+        .add(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "version",
+                namespace: "",
+                prefix: None,
+            },
+            value: Value::String("0.2"),
+        }))
+        .unwrap(); // version="0.2"
+    builder
+        .add(Event::Value(Value::String(
+            "This is an example of serializing EXI streams using EXIP low level API",
+        )))
         .unwrap();
-    // todo: finish
+    builder.add(Event::EndElement).unwrap(); // </EXIPEncoder>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "description",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None,
+        }))
+        .unwrap(); // <description>
+    builder
+        .add(Event::Value(Value::String(
+            "This is a test of processing XML schemes with multiple XSD files",
+        )))
+        .unwrap();
+    builder.add(Event::EndElement).unwrap(); // </description>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "testSetup",
+            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            prefix: None,
+        }))
+        .unwrap(); // <testSetup>
+    builder
+        .add(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "goal",
+                namespace: "",
+                prefix: None,
+            },
+            value: Value::String("Verify that the implementation works!"),
+        }))
+        .unwrap(); // goal="Verify that the implementation works!"
+    builder
+        .add(Event::Value(Value::String(
+            "Simple test element with single attribute",
+        )))
+        .unwrap();
+    builder.add(Event::EndElement).unwrap(); // </testSetup>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "type-test",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None,
+        }))
+        .unwrap(); // <type-test>
+    builder
+        .add(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "id",
+                namespace: "",
+                prefix: None,
+            },
+            value: Value::Integer(1001),
+        }))
+        .unwrap(); // id=1001
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "bool",
+            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            prefix: None,
+        }))
+        .unwrap();
+    builder.add(Event::Value(Value::Boolean(true))).unwrap();
+    builder.add(Event::EndElement).unwrap(); // </bool>
+    builder.add(Event::EndElement).unwrap(); // </type-test>
 }
