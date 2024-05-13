@@ -99,3 +99,27 @@ pub(crate) fn from_qname<'a>(qname: ffi::QName) -> Name<'a> {
         prefix: from_stringtype(qname.prefix),
     }
 }
+
+// Macro so we can get pointers to temporary StringTypes
+#[macro_export]
+macro_rules! to_qname {
+    ($name:expr) => {
+        ffi::QName {
+            uri: &ffi::StringType {
+                str_: $name.namespace.as_ptr() as *mut _,
+                length: $name.namespace.len(),
+            },
+            localName: &ffi::StringType {
+                str_: $name.local_name.as_ptr() as *mut _,
+                length: $name.local_name.len(),
+            },
+            prefix: match $name.prefix {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => std::ptr::null(),
+            },
+        }
+    };
+}

@@ -5,6 +5,7 @@ use crate::{
     data::{to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
     schema::Schema,
+    to_qname,
 };
 
 const OUTPUT_BUFFER_SIZE: usize = 8 * 1024;
@@ -125,23 +126,7 @@ impl Writer {
     }
 
     fn start_element(&mut self, name: Name) -> Result<(), EXIPError> {
-        let qname = ffi::QName {
-            uri: &ffi::StringType {
-                str_: name.namespace.as_ptr() as *mut _,
-                length: name.namespace.len(),
-            },
-            localName: &ffi::StringType {
-                str_: name.local_name.as_ptr() as *mut _,
-                length: name.local_name.len(),
-            },
-            prefix: match name.prefix {
-                Some(n) => &ffi::StringType {
-                    str_: n.as_ptr() as *mut _,
-                    length: n.len(),
-                },
-                None => std::ptr::null(),
-            },
-        };
+        let qname = to_qname!(name);
         unsafe {
             match ffi::serialize.startElement.unwrap()(
                 self.stream.as_mut(),
@@ -165,26 +150,7 @@ impl Writer {
 
     fn attribute(&mut self, attr: Attribute) -> Result<(), EXIPError> {
         // Inlined to keep the StringTypes in scope
-        let qname = ffi::QName {
-            uri: &ffi::StringType {
-                str_: match attr.key.namespace {
-                    "" => std::ptr::null_mut(),
-                    ln => ln.as_ptr() as *mut _,
-                },
-                length: attr.key.namespace.len(),
-            },
-            localName: &ffi::StringType {
-                str_: attr.key.local_name.as_ptr() as *mut _,
-                length: attr.key.local_name.len(),
-            },
-            prefix: match attr.key.prefix {
-                Some(n) => &ffi::StringType {
-                    str_: n.as_ptr() as *mut _,
-                    length: n.len(),
-                },
-                None => std::ptr::null(),
-            },
-        };
+        let qname = to_qname!(attr.key);
         let ec = unsafe {
             ffi::serialize.attribute.unwrap()(
                 self.stream.as_mut(),
@@ -285,23 +251,7 @@ impl Writer {
             namespace: "http://www.w3.org/2001/XMLSchema-instance",
             prefix: None,
         };
-        let qname = ffi::QName {
-            uri: &ffi::StringType {
-                str_: typename.namespace.as_ptr() as *mut _,
-                length: typename.namespace.len(),
-            },
-            localName: &ffi::StringType {
-                str_: typename.local_name.as_ptr() as *mut _,
-                length: typename.local_name.len(),
-            },
-            prefix: match typename.prefix {
-                Some(n) => &ffi::StringType {
-                    str_: n.as_ptr() as *mut _,
-                    length: n.len(),
-                },
-                None => std::ptr::null(),
-            },
-        };
+        let qname = to_qname!(typename);
         let ec = unsafe {
             ffi::serialize.attribute.unwrap()(
                 self.stream.as_mut(),
@@ -314,23 +264,7 @@ impl Writer {
             0 => Ok::<(), EXIPError>(()),
             e => Err(e.into()),
         }?;
-        let qname = ffi::QName {
-            uri: &ffi::StringType {
-                str_: typename.namespace.as_ptr() as *mut _,
-                length: typename.namespace.len(),
-            },
-            localName: &ffi::StringType {
-                str_: typename.local_name.as_ptr() as *mut _,
-                length: typename.local_name.len(),
-            },
-            prefix: match typename.prefix {
-                Some(n) => &ffi::StringType {
-                    str_: n.as_ptr() as *mut _,
-                    length: n.len(),
-                },
-                None => std::ptr::null(),
-            },
-        };
+        let qname = to_qname!(name);
         unsafe {
             match ffi::serialize.qnameData.unwrap()(self.stream.as_mut(), qname) {
                 0 => Ok(()),
@@ -449,4 +383,5 @@ fn simple_write() {
             value: Value::Integer(55),
         }))
         .unwrap();
+    // todo: finish
 }
