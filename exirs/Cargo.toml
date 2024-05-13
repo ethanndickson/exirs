@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 base64 = "0.22.1"
 bitflags = "2.5.0"
+chrono = "0.4.38"
 ffi = { package = "exirs-sys", path = "../exirs-sys" }
 thiserror = "1.0.60"

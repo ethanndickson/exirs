@@ -1,4 +1,4 @@
-use std::{fmt::Display, time::SystemTime};
+use std::fmt::Display;
 
 use base64::Engine;
 
@@ -44,7 +44,7 @@ pub enum Value<'a> {
     String(&'a str),
     Float(f64),
     Binary(&'a [u8]),
-    Timestamp(&'a SystemTime),
+    Timestamp(&'a chrono::NaiveDateTime),
     List(&'a [Value<'a>]),
 }
 

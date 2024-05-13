@@ -1,5 +1,7 @@
 use std::{mem::MaybeUninit, time::SystemTime};
 
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+
 use crate::{
     config::Header,
     data::{to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
@@ -223,8 +225,23 @@ impl Writer {
         }
     }
 
-    fn timestamp(&mut self, ts: &SystemTime) -> Result<(), EXIPError> {
-        todo!()
+    fn timestamp(&mut self, ts: &chrono::NaiveDateTime) -> Result<(), EXIPError> {
+        let tm: ffi::tm = ts.try_into().map_err(|_| EXIPError::InvalidEXIInput)?;
+        let dt = ffi::EXIPDateTime {
+            dateTime: tm,
+            fSecs: ffi::fractionalSecs {
+                offset: 8,
+                value: ts.nanosecond(),
+            },
+            TimeZone: 0,
+            presenceMask: ffi::FRACT_PRESENCE as u8,
+        };
+        unsafe {
+            match ffi::serialize.dateTimeData.unwrap()(self.stream.as_mut(), dt) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
     }
 
     fn list(&mut self, list: &[Value]) -> Result<(), EXIPError> {
@@ -339,7 +356,7 @@ fn simple_schemaless_write() {
 }
 
 #[test]
-fn simple_write() {
+fn full_write() {
     use crate::config::OptionFlags;
 
     let mut header = Header::default();
@@ -458,8 +475,52 @@ fn simple_write() {
             namespace: "http://www.ltu.se/EISLAB/nested-xsd",
             prefix: None,
         }))
-        .unwrap();
+        .unwrap(); // <bool>
     builder.add(Event::Value(Value::Boolean(true))).unwrap();
     builder.add(Event::EndElement).unwrap(); // </bool>
     builder.add(Event::EndElement).unwrap(); // </type-test>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "extendedTypeTest",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None,
+        }))
+        .unwrap(); // <extendedTypeTest>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "byteTest",
+            namespace: "",
+            prefix: None,
+        }))
+        .unwrap(); // <byteTest>
+    builder.add(Event::Value(Value::Integer(11))).unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "dateTimeTest",
+            namespace: "",
+            prefix: None,
+        }))
+        .unwrap();
+    let date = chrono::NaiveDate::from_ymd_opt(2012, 7, 31).unwrap();
+    let time = chrono::NaiveTime::from_hms_micro_opt(13, 33, 55, 839).unwrap();
+    builder
+        .add(Event::Value(Value::Timestamp(&NaiveDateTime::new(
+            date, time,
+        ))))
+        .unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "binaryTest",
+            namespace: "",
+            prefix: None,
+        }))
+        .unwrap();
+    builder
+        .add(Event::Value(Value::Binary(&[
+            0x02, 0x6d, 0x2f, 0xa5, 0x20, 0xf2, 0x61, 0x9c, 0xee, 0x0f,
+        ])))
+        .unwrap();
+    builder.add(Event::EndElement).unwrap(); // </binaryTest>
 }
