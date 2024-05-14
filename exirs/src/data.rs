@@ -46,6 +46,7 @@ pub enum Value<'a> {
     Binary(&'a [u8]),
     Timestamp(&'a chrono::NaiveDateTime),
     List(&'a [Value<'a>]),
+    QName(Name<'a>),
 }
 
 impl<'a> Display for Value<'a> {
@@ -65,7 +66,18 @@ impl<'a> Display for Value<'a> {
                 "{}",
                 list.iter().map(|i| i.to_string()).collect::<String>()
             ),
-            Value::Timestamp(_) => todo!(),
+            Value::Timestamp(ts) => write!(f, "{}", ts),
+            Value::QName(qname) => write!(
+                f,
+                "{}{}{}=\"{}\"",
+                qname.prefix.unwrap_or_default(),
+                match qname.prefix {
+                    Some(_) => ":",
+                    None => "",
+                },
+                qname.namespace,
+                qname.local_name
+            ),
         }
     }
 }

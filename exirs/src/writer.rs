@@ -98,6 +98,7 @@ impl Writer {
                 Value::Binary(binary) => self.binary(binary),
                 Value::Timestamp(ts) => self.timestamp(ts),
                 Value::List(list) => self.list(list),
+                Value::QName(qname) => self.qname(qname),
             }
         } else {
             match value {
@@ -282,6 +283,16 @@ impl Writer {
                 prefix,
                 dec.is_local_element as u32,
             ) {
+                0 => Ok(()),
+                e => Err(e.into()),
+            }
+        }
+    }
+
+    fn qname(&mut self, name: &Name) -> Result<(), EXIPError> {
+        let qname = to_qname!(name);
+        unsafe {
+            match ffi::serialize.qnameData.unwrap()(self.stream.as_mut(), qname) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }

@@ -80,20 +80,24 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn binary(&mut self, bytes: &[u8]) -> Result<(), crate::error::EXIPError> {
-        todo!();
+    fn binary(&mut self, bytes: &'a [u8]) -> Result<(), crate::error::EXIPError> {
+        self.state = HandlerState::Event(Event::Value(Value::Binary(bytes)));
+        Ok(())
     }
 
-    fn qname(&mut self, _: crate::data::Name) -> Result<(), crate::error::EXIPError> {
-        todo!();
+    fn qname(&mut self, name: crate::data::Name<'a>) -> Result<(), crate::error::EXIPError> {
+        self.state = HandlerState::Event(Event::Value(Value::QName(name)));
+        Ok(())
     }
 
-    fn int(&mut self, _: i64) -> Result<(), EXIPError> {
-        todo!();
+    fn int(&mut self, int: i64) -> Result<(), EXIPError> {
+        self.state = HandlerState::Event(Event::Value(Value::Integer(int)));
+        Ok(())
     }
 
     fn float(&mut self, value: ffi::EXIFloat) -> Result<(), EXIPError> {
-        todo!();
+        self.state = HandlerState::Event(Event::Value(Value::Float(value.into())));
+        Ok(())
     }
 
     fn processing_instruction(&mut self) -> Result<(), EXIPError> {
@@ -304,9 +308,12 @@ unsafe extern "C" fn invoke_datetime(
     }
 }
 
-unsafe extern "C" fn invoke_decimal(dec_val: ffi::Decimal, handler: *mut c_void) -> ffi::errorCode {
+unsafe extern "C" fn invoke_decimal(val: ffi::Decimal, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.decimal(val) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_list(
@@ -320,7 +327,10 @@ unsafe extern "C" fn invoke_list(
 
 unsafe extern "C" fn invoke_qname(qname: ffi::QName, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.qname(from_qname(qname)) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_processing_instruction(handler: *mut c_void) -> ffi::errorCode {
