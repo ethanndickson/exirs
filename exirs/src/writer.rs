@@ -1,6 +1,4 @@
-use std::{mem::MaybeUninit, time::SystemTime};
-
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+use std::mem::MaybeUninit;
 
 use crate::{
     config::Header,
@@ -197,15 +195,8 @@ impl Writer {
     }
 
     fn float(&mut self, float: f64) -> Result<(), EXIPError> {
-        let float = float.to_bits();
-        let m = (float & ((1 << 52) - 1)) as i64;
-        let e = ((float >> 52) & 0x7FF) as i16;
-        let float = ffi::EXIFloat {
-            mantissa: m,
-            exponent: e,
-        };
         unsafe {
-            match ffi::serialize.floatData.unwrap()(self.stream.as_mut(), float) {
+            match ffi::serialize.floatData.unwrap()(self.stream.as_mut(), float.into()) {
                 0 => Ok(()),
                 e => Err(e.into()),
             }
@@ -226,16 +217,7 @@ impl Writer {
     }
 
     fn timestamp(&mut self, ts: &chrono::NaiveDateTime) -> Result<(), EXIPError> {
-        let tm: ffi::tm = ts.try_into().map_err(|_| EXIPError::InvalidEXIInput)?;
-        let dt = ffi::EXIPDateTime {
-            dateTime: tm,
-            fSecs: ffi::fractionalSecs {
-                offset: 8,
-                value: ts.nanosecond(),
-            },
-            TimeZone: 0,
-            presenceMask: ffi::FRACT_PRESENCE as u8,
-        };
+        let dt: ffi::EXIPDateTime = ts.try_into().map_err(|_| EXIPError::InvalidEXIInput)?;
         unsafe {
             match ffi::serialize.dateTimeData.unwrap()(self.stream.as_mut(), dt) {
                 0 => Ok(()),
@@ -358,6 +340,7 @@ fn simple_schemaless_write() {
 #[test]
 fn full_write() {
     use crate::config::OptionFlags;
+    use chrono::NaiveDateTime;
 
     let mut header = Header::default();
     header.has_cookie = true;

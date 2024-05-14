@@ -19,7 +19,6 @@ enum HandlerState<'a> {
     Empty,
     PartialAttribute(Name<'a>),
     Event(Event<'a>),
-    Error(EXIPError),
 }
 
 impl<'a> HandlerState<'a> {
@@ -67,18 +66,21 @@ impl<'a> Handler<'a> {
     }
 
     fn decimal(&mut self, value: ffi::EXIFloat) -> Result<(), crate::error::EXIPError> {
-        self.float(value)
+        self.state = HandlerState::Event(Event::Value(Value::Float(value.into())));
+        Ok(())
     }
 
     fn boolean(&mut self, value: bool) -> Result<(), crate::error::EXIPError> {
-        todo!();
+        self.state = HandlerState::Event(Event::Value(Value::Boolean(value)));
+        Ok(())
     }
 
-    fn datetime(&mut self, _: &str) -> Result<(), crate::error::EXIPError> {
-        todo!();
+    fn datetime(&mut self, dt: &'a chrono::NaiveDateTime) -> Result<(), crate::error::EXIPError> {
+        self.state = HandlerState::Event(Event::Value(Value::Timestamp(dt)));
+        Ok(())
     }
 
-    fn binary(&mut self, _: &[u8], _: usize) -> Result<(), crate::error::EXIPError> {
+    fn binary(&mut self, bytes: &[u8]) -> Result<(), crate::error::EXIPError> {
         todo!();
     }
 
@@ -170,6 +172,17 @@ impl<'a> Iterator for Reader<'a> {
         match mem::replace(&mut self.handler.state, HandlerState::Empty) {
             HandlerState::Event(Event::StartDocument) => Some(Ok(Event::StartDocument)),
             HandlerState::Event(Event::EndDocument) => None,
+            HandlerState::Empty => {
+                let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
+                match ec {
+                    ffi::errorCode_EXIP_OK => match &self.handler.state {
+                        HandlerState::PartialAttribute(_) => self.next(),
+                        _ => Some(Ok(self.handler.state.take_event())),
+                    },
+                    ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
+                    e => Some(Err(e.into())),
+                }
+            }
             HandlerState::PartialAttribute(name) => {
                 let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
                 match ec {
@@ -183,17 +196,6 @@ impl<'a> Iterator for Reader<'a> {
                     e => Some(Err(e.into())),
                 }
             }
-            HandlerState::Empty => {
-                let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
-                match ec {
-                    ffi::errorCode_EXIP_OK => match &self.handler.state {
-                        HandlerState::PartialAttribute(_) => self.next(),
-                        _ => Some(Ok(self.handler.state.take_event())),
-                    },
-                    ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
-                    e => Some(Err(e.into())),
-                }
-            }
             _ => Some(Err(EXIPError::Unexpected)),
         }
     }
@@ -202,7 +204,7 @@ impl<'a> Iterator for Reader<'a> {
 unsafe extern "C" fn invoke_start_document(handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.start_document() {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
@@ -210,7 +212,7 @@ unsafe extern "C" fn invoke_start_document(handler: *mut c_void) -> ffi::errorCo
 unsafe extern "C" fn invoke_end_document(handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.end_document() {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
@@ -221,7 +223,7 @@ unsafe extern "C" fn invoke_start_element(
 ) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.start_element(from_qname(qname)) {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
@@ -229,7 +231,7 @@ unsafe extern "C" fn invoke_start_element(
 unsafe extern "C" fn invoke_end_element(handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.end_element() {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
@@ -237,32 +239,41 @@ unsafe extern "C" fn invoke_end_element(handler: *mut c_void) -> ffi::errorCode 
 unsafe extern "C" fn invoke_attribute(qname: ffi::QName, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.attribute(from_qname(qname)) {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
 
 unsafe extern "C" fn invoke_int(integer: ffi::Integer, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.int(integer) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_boolean(bool: ffi::boolean, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.boolean(bool != 0) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_string(str: ffi::String, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
     match handler.string(from_stringtype(&str as *const _).unwrap_or_default()) {
-        Ok(_) => 0,
+        Ok(_) => ffi::errorCode_EXIP_OK,
         Err(e) => e as u32,
     }
 }
 
-unsafe extern "C" fn invoke_float(str: ffi::Float, handler: *mut c_void) -> ffi::errorCode {
+unsafe extern "C" fn invoke_float(float: ffi::Float, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.float(float) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_binary(
@@ -271,7 +282,11 @@ unsafe extern "C" fn invoke_binary(
     handler: *mut c_void,
 ) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    let slice = std::slice::from_raw_parts(binary as *const u8, nbytes);
+    match handler.binary(slice) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_datetime(
@@ -279,7 +294,14 @@ unsafe extern "C" fn invoke_datetime(
     handler: *mut c_void,
 ) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match &chrono::NaiveDateTime::try_from(&dt_val) {
+        // todo: this could return a date in another format if it's invalid
+        Ok(dt) => match handler.datetime(dt) {
+            Ok(_) => ffi::errorCode_EXIP_OK,
+            Err(e) => e as u32,
+        },
+        Err(_) => return ffi::errorCode_EXIP_INVALID_EXI_INPUT,
+    }
 }
 
 unsafe extern "C" fn invoke_decimal(dec_val: ffi::Decimal, handler: *mut c_void) -> ffi::errorCode {
