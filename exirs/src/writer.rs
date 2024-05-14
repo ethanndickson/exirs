@@ -523,4 +523,16 @@ fn full_write() {
         ])))
         .unwrap();
     builder.add(Event::EndElement).unwrap(); // </binaryTest>
+    builder
+        .add(Event::StartElement(Name {
+            local_name: "enumTest",
+            namespace: "",
+            prefix: None,
+        }))
+        .unwrap();
+    builder.add(Event::Value(Value::String("hej"))).unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder.add(Event::EndElement).unwrap();
+    builder.add(Event::EndDocument).unwrap();
 }

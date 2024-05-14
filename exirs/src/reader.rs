@@ -1,26 +1,45 @@
 use std::{
-    mem::MaybeUninit,
+    mem::{self, MaybeUninit},
     os::raw::{c_char, c_uint, c_void},
 };
 
 use crate::{
-    data::{from_qname, from_stringtype, Event, Value},
+    data::{from_qname, from_stringtype, Attribute, Event, Name, Value},
     error::EXIPError,
 };
 
 #[derive(Default)]
 struct Handler<'a> {
-    latest: Option<Event<'a>>,
+    state: HandlerState<'a>,
+}
+
+#[derive(Default)]
+enum HandlerState<'a> {
+    #[default]
+    Empty,
+    PartialAttribute(Name<'a>),
+    Event(Event<'a>),
+    Error(EXIPError),
+}
+
+impl<'a> HandlerState<'a> {
+    fn take_event(&mut self) -> Event<'a> {
+        let inner = mem::replace(self, HandlerState::Empty);
+        match inner {
+            HandlerState::Event(e) => e,
+            _ => unreachable!("checked prior"),
+        }
+    }
 }
 
 impl<'a> Handler<'a> {
     fn start_document(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(Event::StartDocument);
+        self.state = HandlerState::Event(Event::StartDocument);
         Ok(())
     }
 
     fn end_document(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(Event::EndDocument);
+        self.state = HandlerState::Event(Event::EndDocument);
         Ok(())
     }
 
@@ -28,21 +47,22 @@ impl<'a> Handler<'a> {
         &mut self,
         name: crate::data::Name<'a>,
     ) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(Event::StartElement(name));
+        self.state = HandlerState::Event(Event::StartElement(name));
         Ok(())
     }
 
     fn end_element(&mut self) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(Event::EndElement);
+        self.state = HandlerState::Event(Event::EndElement);
         Ok(())
     }
 
-    fn attribute(&mut self, name: crate::data::Name) -> Result<(), crate::error::EXIPError> {
-        todo!();
+    fn attribute(&mut self, name: crate::data::Name<'a>) -> Result<(), crate::error::EXIPError> {
+        self.state = HandlerState::PartialAttribute(name);
+        Ok(())
     }
 
     fn string(&mut self, value: &'a str) -> Result<(), crate::error::EXIPError> {
-        self.latest = Some(Event::Value(Value::String(value)));
+        self.state = HandlerState::Event(Event::Value(Value::String(value)));
         Ok(())
     }
 
@@ -147,19 +167,34 @@ impl<'a> Iterator for Reader<'a> {
     type Item = Result<Event<'a>, EXIPError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // StartDocument is returned before parseNext is called
-        if let Some(Event::StartDocument) = self.handler.latest {
-            return Some(Ok(self.handler.latest.take().unwrap()));
-        }
-        // EndDocument is only returned once
-        if let Some(Event::EndDocument) = self.handler.latest {
-            return None;
-        }
-        let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut() as *mut _) };
-        match ec {
-            0 => Some(Ok(self.handler.latest.take().unwrap())),
-            11 => Some(Ok(self.handler.latest.clone().unwrap())),
-            e => Some(Err(e.into())),
+        match mem::replace(&mut self.handler.state, HandlerState::Empty) {
+            HandlerState::Event(Event::StartDocument) => Some(Ok(Event::StartDocument)),
+            HandlerState::Event(Event::EndDocument) => None,
+            HandlerState::PartialAttribute(name) => {
+                let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
+                match ec {
+                    ffi::errorCode_EXIP_OK => {
+                        if let Event::Value(value) = self.handler.state.take_event() {
+                            Some(Ok(Event::Attribute(Attribute { key: name, value })))
+                        } else {
+                            Some(Err(EXIPError::Unexpected))
+                        }
+                    }
+                    e => Some(Err(e.into())),
+                }
+            }
+            HandlerState::Empty => {
+                let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
+                match ec {
+                    ffi::errorCode_EXIP_OK => match &self.handler.state {
+                        HandlerState::PartialAttribute(_) => self.next(),
+                        _ => Some(Ok(self.handler.state.take_event())),
+                    },
+                    ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
+                    e => Some(Err(e.into())),
+                }
+            }
+            _ => Some(Err(EXIPError::Unexpected)),
         }
     }
 }
@@ -201,7 +236,10 @@ unsafe extern "C" fn invoke_end_element(handler: *mut c_void) -> ffi::errorCode 
 
 unsafe extern "C" fn invoke_attribute(qname: ffi::QName, handler: *mut c_void) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.attribute(from_qname(qname)) {
+        Ok(_) => 0,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_int(integer: ffi::Integer, handler: *mut c_void) -> ffi::errorCode {
