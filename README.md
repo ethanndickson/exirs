@@ -2,43 +2,37 @@
 
 `exirs` provides Rust bindings for [EXIP](https://sourceforge.net/projects/exip/), an embeddable EXI processor written in C.
 
-The library is currently a WIP, and only supports reading and writing schemaless documents.
+This library is currently a WIP, and requires extensive further testing.
 
+# Documentation
+todo
 
 # Examples
 Writing a simple schemaless document:
 ```rust
 use exirs::{
-    config::{Header, OptionFlags},
+    config::{Header, Options},
     data::{Event, Name, Value},
     Writer,
 };
 
-fn main() {
-    let mut header = Header::default();
-    header.has_cookie = true;
-    header.has_options = true;
-    header.opts.value_max_length = 300;
-    header.opts.value_partition_capacity = 50;
-    header.opts.flags.insert(OptionFlags::STRICT);
-    let mut builder = Writer::new(header);
-    builder.add(Event::ExiHeader).unwrap();
-    builder.add(Event::StartDocument).unwrap();
-    builder
-        .add(Event::StartElement(Name {
-            local_name: "MultipleXSDsTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
-            prefix: None,
-        }))
-        .unwrap();
-    builder
-        .add(Event::Value(Value::String(
-            "This is an example of serializing EXI streams using EXIP low level API",
-        )))
-        .unwrap();
-    builder.add(Event::EndElement).unwrap();
-    builder.add(Event::EndDocument).unwrap();
-    println!("{:?}", builder.get());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let options = Options::default().strict(true);
+    let header = Header::with_options(options).has_cookie(true);
+    let mut builder = Writer::new(header, None)?;
+    builder.add(Event::StartDocument)?;
+    builder.add(Event::StartElement(Name {
+        local_name: "MultipleXSDsTest",
+        namespace: "http://www.ltu.se/EISLAB/schema-test",
+        prefix: None,
+    }))?;
+    builder.add(Event::Value(Value::String(
+        "This is an example of serializing EXI streams using EXIP low level API",
+    )))?;
+    builder.add(Event::EndElement)?;
+    builder.add(Event::EndDocument)?;
+    println!("{:#04X?}", builder.get());
+    Ok(())
 }
 ```
 
