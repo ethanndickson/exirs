@@ -6,8 +6,8 @@ use std::{
 use bytes::Bytes;
 
 use crate::{
-    config::Schema,
-    data::{from_qname, from_stringtype, Attribute, Event, Name, Value},
+    config::{Options, Schema},
+    data::{from_qname, from_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
 };
 
@@ -111,24 +111,18 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn processing_instruction(&mut self) -> Result<(), EXIPError> {
-        todo!();
-    }
-
-    fn namespace_declaration(&mut self, _: &str, _: &str, _: bool) -> Result<(), EXIPError> {
-        todo!();
-    }
-
-    fn warning(&mut self, _: EXIPError, _: &str) -> Result<(), EXIPError> {
-        todo!();
-    }
-
-    fn error(&mut self, _: EXIPError, _: &str) -> Result<(), EXIPError> {
-        todo!();
-    }
-
-    fn self_contained(&mut self) -> Result<(), EXIPError> {
-        todo!();
+    fn namespace_declaration(
+        &mut self,
+        namespace: &'a str,
+        prefix: &'a str,
+        is_local_element: bool,
+    ) -> Result<(), EXIPError> {
+        self.state = HandlerState::Event(Event::NamespaceDeclaration(NamespaceDeclaration {
+            namespace,
+            prefix,
+            is_local_element,
+        }));
+        Ok(())
     }
 }
 pub struct Reader<'a> {
@@ -138,7 +132,14 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(bytes: impl Into<Bytes>, schema: Option<Schema>) -> Result<Self, EXIPError> {
+    ///
+    /// If a `crate::config::Options` is supplied, it will be used where
+    pub fn new(
+        bytes: impl Into<Bytes>,
+        schema: Option<Schema>,
+        options: Option<Options>,
+    ) -> Result<Self, EXIPError> {
+        let has_options = options.is_some() as u32;
         let mut parser: MaybeUninit<ffi::Parser> = MaybeUninit::uninit();
         let heap_buf: Bytes = bytes.into();
         let buf_rep = ffi::BinaryBuffer {
@@ -161,7 +162,10 @@ impl<'a> Reader<'a> {
         assert_eq!(ec, 0);
         let mut parser = unsafe { parser.assume_init() };
         parser.handler = new_handler();
-        let ec = unsafe { (ffi::parse.parseHeader).unwrap()(&mut parser as *mut _, 0) };
+        if let Some(options) = options {
+            parser.strm.header.opts = options.ffi()
+        }
+        let ec = unsafe { (ffi::parse.parseHeader).unwrap()(&mut parser as *mut _, has_options) };
         assert_eq!(ec, 0);
         let ec = unsafe {
             (ffi::parse.setSchema).unwrap()(
@@ -362,11 +366,6 @@ unsafe extern "C" fn invoke_qname(qname: ffi::QName, handler: *mut c_void) -> ff
     }
 }
 
-unsafe extern "C" fn invoke_processing_instruction(handler: *mut c_void) -> ffi::errorCode {
-    let handler = &mut *(handler as *mut Handler);
-    0
-}
-
 unsafe extern "C" fn invoke_nsdec(
     ns: ffi::String,
     prefix: ffi::String,
@@ -374,39 +373,14 @@ unsafe extern "C" fn invoke_nsdec(
     handler: *mut c_void,
 ) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
-}
-
-unsafe extern "C" fn invoke_warning(
-    code: ffi::errorCode,
-    msg: *const c_char,
-    handler: *mut c_void,
-) -> ffi::errorCode {
-    let handler = &mut *(handler as *mut Handler);
-    0
-}
-
-unsafe extern "C" fn invoke_error(
-    code: ffi::errorCode,
-    msg: *const c_char,
-    handler: *mut c_void,
-) -> ffi::errorCode {
-    let handler = &mut *(handler as *mut Handler);
-    0
-}
-
-unsafe extern "C" fn invoke_fatal_error(
-    code: ffi::errorCode,
-    msg: *const c_char,
-    handler: *mut c_void,
-) -> ffi::errorCode {
-    let handler = &mut *(handler as *mut Handler);
-    0
-}
-
-unsafe extern "C" fn invoke_self_contained(handler: *mut c_void) -> ffi::errorCode {
-    let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.namespace_declaration(
+        from_stringtype(&ns as *const _).unwrap_or_default(),
+        from_stringtype(&prefix as *const _).unwrap_or_default(),
+        is_local != 0,
+    ) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 fn new_handler() -> ffi::ContentHandler {
@@ -425,12 +399,13 @@ fn new_handler() -> ffi::ContentHandler {
         decimalData: Some(invoke_decimal),
         listData: Some(invoke_list),
         qnameData: Some(invoke_qname),
-        processingInstruction: Some(invoke_processing_instruction),
         namespaceDeclaration: Some(invoke_nsdec),
-        warning: Some(invoke_warning),
-        error: Some(invoke_error),
-        fatalError: Some(invoke_fatal_error),
-        selfContained: Some(invoke_self_contained),
+        // EXIP never calls these functions
+        warning: None,
+        error: None,
+        fatalError: None,
+        processingInstruction: None,
+        selfContained: None,
     }
 }
 
@@ -447,7 +422,7 @@ fn simple_read() {
         146, 64, 230, 232, 228, 202, 194, 218, 230, 64, 234, 230, 210, 220, 206, 64, 138, 176, 146,
         160, 64, 216, 222, 238, 64, 216, 202, 236, 202, 216, 64, 130, 160, 146,
     ];
-    let mut reader = Reader::new(Bytes::from_static(input), None).unwrap();
+    let mut reader = Reader::new(Bytes::from_static(input), None, None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
@@ -498,7 +473,7 @@ fn full_read() {
         None,
     )
     .unwrap();
-    let mut reader = Reader::new(Bytes::from_static(input), Some(schema)).unwrap();
+    let mut reader = Reader::new(Bytes::from_static(input), Some(schema), None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
