@@ -3,9 +3,12 @@ use std::{
     os::raw::{c_char, c_uint, c_void},
 };
 
+use bytes::Bytes;
+
 use crate::{
     data::{from_qname, from_stringtype, Attribute, Event, Name, Value},
     error::EXIPError,
+    schema::Schema,
 };
 
 #[derive(Default)]
@@ -82,7 +85,9 @@ impl<'a> Handler<'a> {
     }
 
     fn binary(&mut self, bytes: &'a [u8]) -> Result<(), crate::error::EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::Binary(bytes)));
+        // EXIP immediately frees read bytes, so we need to copy
+        self.state =
+            HandlerState::Event(Event::Value(Value::Binary(Bytes::copy_from_slice(bytes))));
         Ok(())
     }
 
@@ -127,13 +132,15 @@ impl<'a> Handler<'a> {
     }
 }
 pub struct Reader<'a> {
+    uses_schema: bool,
     parser: Box<ffi::Parser>,
     _buf: Box<[u8]>,
     handler: Box<Handler<'a>>,
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(bytes: impl AsRef<[u8]>) -> Self {
+    pub fn new(bytes: impl AsRef<[u8]>, schema: Option<Schema>) -> Result<Self, EXIPError> {
+        let uses_schema = schema.is_some();
         let mut parser: MaybeUninit<ffi::Parser> = MaybeUninit::uninit();
         let mut heap_buf: Box<[u8]> = Box::from(bytes.as_ref());
         let buf_rep = ffi::BinaryBuffer {
@@ -158,14 +165,21 @@ impl<'a> Reader<'a> {
         parser.handler = new_handler();
         let ec = unsafe { (ffi::parse.parseHeader).unwrap()(&mut parser as *mut _, 0) };
         assert_eq!(ec, 0);
-        let ec =
-            unsafe { (ffi::parse.setSchema).unwrap()(&mut parser as *mut _, std::ptr::null_mut()) };
-        assert_eq!(ec, 0);
-        Self {
+        let ec = unsafe {
+            (ffi::parse.setSchema).unwrap()(
+                &mut parser as *mut _,
+                schema.map_or(std::ptr::null_mut(), |mut s| s.inner.as_mut()),
+            )
+        };
+        if ec != 0 {
+            return Err(ec.into());
+        }
+        Ok(Self {
             parser: Box::new(parser),
             _buf: heap_buf,
             handler,
-        }
+            uses_schema,
+        })
     }
 }
 
@@ -436,7 +450,7 @@ fn simple_read() {
         171, 9, 36, 14, 110, 142, 76, 172, 45, 174, 100, 14, 174, 109, 45, 204, 228, 8, 171, 9, 42,
         4, 13, 141, 238, 228, 13, 140, 174, 204, 173, 132, 8, 42, 9, 32,
     ];
-    let mut reader = Reader::new(input);
+    let mut reader = Reader::new(input, None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
@@ -455,4 +469,183 @@ fn simple_read() {
     assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
     assert_eq!(reader.next(), Some(Ok(Event::EndDocument)));
     assert_eq!(reader.next(), None);
+}
+
+#[test]
+fn full_read() {
+    let input = [
+        0x24, 0x45, 0x58, 0x49, 0xA0, 0x02, 0xAC, 0x02, 0x0C, 0xB2, 0x96, 0xE0, 0x53, 0x02, 0xE3,
+        0x24, 0x85, 0x46, 0x86, 0x97, 0x32, 0x06, 0x97, 0x32, 0x06, 0x16, 0xE2, 0x06, 0x57, 0x86,
+        0x16, 0xD7, 0x06, 0xC6, 0x52, 0x06, 0xF6, 0x62, 0x07, 0x36, 0x57, 0x26, 0x96, 0x16, 0xC6,
+        0x97, 0xA6, 0x96, 0xE6, 0x72, 0x04, 0x55, 0x84, 0x92, 0x07, 0x37, 0x47, 0x26, 0x56, 0x16,
+        0xD7, 0x32, 0x07, 0x57, 0x36, 0x96, 0xE6, 0x72, 0x04, 0x55, 0x84, 0x95, 0x02, 0x06, 0xC6,
+        0xF7, 0x72, 0x06, 0xC6, 0x57, 0x66, 0x56, 0xC2, 0x04, 0x15, 0x04, 0x92, 0x12, 0xA3, 0x43,
+        0x4B, 0x99, 0x03, 0x4B, 0x99, 0x03, 0x09, 0x03, 0xA3, 0x2B, 0x9B, 0xA1, 0x03, 0x7B, 0x31,
+        0x03, 0x83, 0x93, 0x7B, 0x1B, 0x2B, 0x9B, 0x9B, 0x4B, 0x73, 0x39, 0x02, 0xC2, 0x6A, 0x61,
+        0x03, 0x9B, 0x1B, 0x43, 0x2B, 0x6B, 0x2B, 0x99, 0x03, 0xBB, 0x4B, 0xA3, 0x41, 0x03, 0x6B,
+        0xAB, 0x63, 0xA3, 0x4B, 0x83, 0x63, 0x29, 0x02, 0xC2, 0x9A, 0x21, 0x03, 0x33, 0x4B, 0x63,
+        0x2B, 0x98, 0x9D, 0x59, 0x95, 0xC9, 0xA5, 0x99, 0xE4, 0x81, 0xD1, 0xA1, 0x85, 0xD0, 0x81,
+        0xD1, 0xA1, 0x94, 0x81, 0xA5, 0xB5, 0xC1, 0xB1, 0x95, 0xB5, 0x95, 0xB9, 0xD1, 0x85, 0xD1,
+        0xA5, 0xBD, 0xB8, 0x81, 0xDD, 0xBD, 0xC9, 0xAD, 0xCC, 0x84, 0xAD, 0x4D, 0xA5, 0xB5, 0xC1,
+        0xB1, 0x94, 0x81, 0xD1, 0x95, 0xCD, 0xD0, 0x81, 0x95, 0xB1, 0x95, 0xB5, 0x95, 0xB9, 0xD0,
+        0x81, 0xDD, 0xA5, 0xD1, 0xA0, 0x81, 0xCD, 0xA5, 0xB9, 0x9D, 0xB1, 0x94, 0x81, 0x85, 0xD1,
+        0xD1, 0xC9, 0xA5, 0x89, 0xD5, 0xD1, 0x94, 0x74, 0x83, 0xA8, 0xB0, 0x63, 0xFD, 0xB0, 0xEF,
+        0x90, 0xA0, 0x39, 0x01, 0x40, 0x4D, 0xA5, 0xF4, 0xA4, 0x1E, 0x4C, 0x33, 0x9D, 0xC1, 0xEC,
+    ];
+    let schema = Schema::new(
+        &[
+            "./examples/exipe-test-xsd.exi",
+            "./examples/exipe-test-types-xsd.exi",
+            "./examples/exipe-test-nested-xsd.exi",
+        ],
+        None,
+    )
+    .unwrap();
+    let mut reader = Reader::new(input, Some(schema)).unwrap();
+    assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "MultipleXSDsTest",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "EXIPEncoder",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None
+        })))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Integer(55)))));
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::String("0.2")))));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::String(
+            "This is an example of serializing EXI streams using EXIP low level API"
+        ))))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "description",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::String(
+            "This is a test of processing XML schemes with multiple XSD files"
+        ))))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "testSetup",
+            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::String(
+            "Verify that the implementation works!"
+        ))))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::String(
+            "Simple test element with single attribute"
+        ))))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "type-test",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None
+        })))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Integer(1001)))));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "bool",
+            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            prefix: None
+        })))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Boolean(true)))));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "extendedTypeTest",
+            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "byteTest",
+            namespace: "",
+            prefix: None
+        })))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Integer(11)))));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "dateTimeTest",
+            namespace: "",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::Timestamp(
+            &chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2012, 7, 31).unwrap(),
+                chrono::NaiveTime::from_hms_micro_opt(13, 33, 55, 839).unwrap(),
+            )
+        ))))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "binaryTest",
+            namespace: "",
+            prefix: None
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Value(Value::Binary(Bytes::from_static(&[
+            0x02, 0x6d, 0x2f, 0xa5, 0x20, 0xf2, 0x61, 0x9c, 0xee, 0x0f,
+        ])))))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::StartElement(Name {
+            local_name: "enumTest",
+            namespace: "",
+            prefix: None
+        })))
+    );
+    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::String("hej")))));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndElement)));
+    assert_eq!(reader.next(), Some(Ok(Event::EndDocument)));
 }

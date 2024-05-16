@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use base64::Engine;
+use bytes::Bytes;
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -43,7 +44,7 @@ pub enum Value<'a> {
     Boolean(bool),
     String(&'a str),
     Float(f64),
-    Binary(&'a [u8]),
+    Binary(Bytes),
     Timestamp(&'a chrono::NaiveDateTime),
     List(Vec<Value<'a>>),
     QName(Name<'a>),
@@ -96,9 +97,10 @@ pub(crate) fn to_stringtype(str: &str) -> ffi::StringType {
 }
 
 pub(crate) fn from_stringtype<'a>(str: *const ffi::StringType) -> Option<&'a str> {
-    if str.is_null() {
+    if str.is_null() || { unsafe { (*str).str_.is_null() } } {
         None
     } else {
+        // todo: fix if the length exceeds valueMaxLength use after free
         let slice = unsafe { std::slice::from_raw_parts((*str).str_ as *const u8, (*str).length) };
         std::str::from_utf8(slice).ok()
     }
