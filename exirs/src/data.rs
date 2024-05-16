@@ -100,7 +100,6 @@ pub(crate) fn from_stringtype<'a>(str: *const ffi::StringType) -> Option<&'a str
     if str.is_null() || { unsafe { (*str).str_.is_null() } } {
         None
     } else {
-        // todo: fix if the length exceeds valueMaxLength use after free
         let slice = unsafe { std::slice::from_raw_parts((*str).str_ as *const u8, (*str).length) };
         std::str::from_utf8(slice).ok()
     }
