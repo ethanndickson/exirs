@@ -1,9 +1,7 @@
 use std::mem::MaybeUninit;
 
-use bytes::Bytes;
-
 use crate::{
-    config::{Header, Options, Schema},
+    config::{Header, Schema},
     data::{to_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
     error::EXIPError,
     to_qname,
@@ -15,7 +13,7 @@ pub struct Writer {
     uses_schema: bool,
     cur_tc: Box<ffi::EXITypeClass>,
     stream: Box<ffi::EXIStream>,
-    _buf: Box<[u8; OUTPUT_BUFFER_SIZE]>,
+    _buf: Box<[u8]>,
 }
 
 impl Drop for Writer {
@@ -33,7 +31,7 @@ impl Writer {
         header.apply(ptr);
         let mut stream = unsafe { stream.assume_init() };
 
-        let mut heap_buf = Box::new([0_u8; OUTPUT_BUFFER_SIZE]); // 8KiB
+        let mut heap_buf = vec![0; OUTPUT_BUFFER_SIZE].into_boxed_slice(); // 8KiB
         let buf = ffi::BinaryBuffer {
             buf: heap_buf.as_mut_ptr() as *mut i8,
             bufLen: OUTPUT_BUFFER_SIZE,
@@ -81,12 +79,7 @@ impl Writer {
     }
 
     pub fn get(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                self.stream.buffer.buf as *mut u8,
-                self.stream.buffer.bufContent,
-            )
-        }
+        &self._buf[..self.stream.buffer.bufContent]
     }
 
     fn value(&mut self, value: &Value) -> Result<(), EXIPError> {
@@ -219,7 +212,7 @@ impl Writer {
     }
 
     fn timestamp(&mut self, ts: &chrono::NaiveDateTime) -> Result<(), EXIPError> {
-        let dt: ffi::EXIPDateTime = ts.try_into().map_err(|_| EXIPError::InvalidEXIInput)?;
+        let dt: ffi::EXIPDateTime = ts.into();
         unsafe {
             match ffi::serialize.dateTimeData.unwrap()(self.stream.as_mut(), dt) {
                 0 => Ok(()),
@@ -310,6 +303,8 @@ impl Default for Writer {
 
 #[test]
 fn simple_schemaless_write() {
+    use crate::config::Options;
+
     let options = Options::default().strict(true);
     let header = Header::with_options(options).has_cookie(true);
     let mut builder = Writer::new(header, None).unwrap();
@@ -345,6 +340,8 @@ fn simple_schemaless_write() {
 
 #[test]
 fn full_write() {
+    use crate::config::Options;
+    use bytes::Bytes;
     use chrono::NaiveDateTime;
 
     let options = Options::default().strict(true);

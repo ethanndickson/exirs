@@ -32,7 +32,7 @@ impl From<Alignment> for OptionFlags {
 }
 
 impl<'a> Options<'a> {
-    pub(crate) fn to_raw(self) -> ffi::EXIOptions {
+    pub(crate) fn ffi(self) -> ffi::EXIOptions {
         ffi::EXIOptions {
             enumOpt: self.flags.bits(),
             preserve: self.preserve.bits(),
@@ -209,7 +209,7 @@ impl<'a> Header<'a> {
             (*ptr).header.has_options = self.has_options as u32;
             (*ptr).header.is_preview_version = self.is_preview_version as u32;
             (*ptr).header.version_number = self.version_number;
-            (*ptr).header.opts = self.opts.to_raw();
+            (*ptr).header.opts = self.opts.ffi();
         }
     }
 }
@@ -265,7 +265,7 @@ impl Schema {
                 buf_reps.as_mut_ptr(),
                 num_files as u32,
                 ffi::SchemaFormat_SCHEMA_FORMAT_XSD_EXI,
-                opts.map_or(std::ptr::null_mut(), |opts| &mut opts.to_raw()),
+                opts.map_or(std::ptr::null_mut(), |opts| &mut opts.ffi()),
                 schema.as_mut_ptr(),
                 None,
             )

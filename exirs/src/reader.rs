@@ -132,19 +132,17 @@ impl<'a> Handler<'a> {
     }
 }
 pub struct Reader<'a> {
-    uses_schema: bool,
     parser: Box<ffi::Parser>,
-    _buf: Box<[u8]>,
+    _buf: Bytes,
     handler: Box<Handler<'a>>,
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(bytes: impl AsRef<[u8]>, schema: Option<Schema>) -> Result<Self, EXIPError> {
-        let uses_schema = schema.is_some();
+    pub fn new(bytes: impl Into<Bytes>, schema: Option<Schema>) -> Result<Self, EXIPError> {
         let mut parser: MaybeUninit<ffi::Parser> = MaybeUninit::uninit();
-        let mut heap_buf: Box<[u8]> = Box::from(bytes.as_ref());
+        let heap_buf: Bytes = bytes.into();
         let buf_rep = ffi::BinaryBuffer {
-            buf: heap_buf.as_mut_ptr() as *mut _,
+            buf: heap_buf.as_ptr() as *mut _,
             bufLen: heap_buf.len(),
             bufContent: heap_buf.len(),
             ioStrm: ffi::ioStream {
@@ -178,7 +176,6 @@ impl<'a> Reader<'a> {
             parser: Box::new(parser),
             _buf: heap_buf,
             handler,
-            uses_schema,
         })
     }
 }
@@ -333,7 +330,7 @@ unsafe extern "C" fn invoke_datetime(
             Ok(_) => ffi::errorCode_EXIP_OK,
             Err(e) => e as u32,
         },
-        Err(_) => return ffi::errorCode_EXIP_INVALID_EXI_INPUT,
+        Err(_) => ffi::errorCode_EXIP_INVALID_EXI_INPUT,
     }
 }
 
@@ -441,7 +438,7 @@ fn new_handler() -> ffi::ContentHandler {
 fn simple_read() {
     use crate::data::Name;
 
-    let input = [
+    let input = &[
         36, 69, 88, 73, 160, 65, 35, 67, 163, 163, 129, 209, 121, 123, 187, 187, 185, 115, 99, 163,
         169, 115, 155, 41, 122, 42, 74, 154, 98, 10, 17, 123, 155, 27, 67, 43, 107, 9, 107, 163,
         43, 155, 160, 138, 107, 171, 99, 163, 75, 131, 99, 42, 194, 154, 35, 154, 163, 43, 155,
@@ -450,7 +447,7 @@ fn simple_read() {
         146, 64, 230, 232, 228, 202, 194, 218, 230, 64, 234, 230, 210, 220, 206, 64, 138, 176, 146,
         160, 64, 216, 222, 238, 64, 216, 202, 236, 202, 216, 64, 130, 160, 146,
     ];
-    let mut reader = Reader::new(input, None).unwrap();
+    let mut reader = Reader::new(Bytes::from_static(input), None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
@@ -473,7 +470,7 @@ fn simple_read() {
 
 #[test]
 fn full_read() {
-    let input = [
+    let input = &[
         0x24, 0x45, 0x58, 0x49, 0xA0, 0x49, 0x6E, 0x05, 0x30, 0x2E, 0x32, 0x48, 0x54, 0x68, 0x69,
         0x73, 0x20, 0x69, 0x73, 0x20, 0x61, 0x6E, 0x20, 0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,
         0x20, 0x6F, 0x66, 0x20, 0x73, 0x65, 0x72, 0x69, 0x61, 0x6C, 0x69, 0x7A, 0x69, 0x6E, 0x67,
@@ -501,7 +498,7 @@ fn full_read() {
         None,
     )
     .unwrap();
-    let mut reader = Reader::new(input, Some(schema)).unwrap();
+    let mut reader = Reader::new(Bytes::from_static(input), Some(schema)).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
