@@ -45,7 +45,7 @@ pub enum Value<'a> {
     Float(f64),
     Binary(&'a [u8]),
     Timestamp(&'a chrono::NaiveDateTime),
-    List(&'a [Value<'a>]),
+    List(Vec<Value<'a>>),
     QName(Name<'a>),
 }
 

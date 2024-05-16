@@ -18,6 +18,7 @@ enum HandlerState<'a> {
     #[default]
     Empty,
     PartialAttribute(Name<'a>),
+    PartialList(Vec<Value<'a>>, u32),
     Event(Event<'a>),
 }
 
@@ -97,6 +98,11 @@ impl<'a> Handler<'a> {
 
     fn float(&mut self, value: ffi::EXIFloat) -> Result<(), EXIPError> {
         self.state = HandlerState::Event(Event::Value(Value::Float(value.into())));
+        Ok(())
+    }
+
+    fn list(&mut self, len: u32) -> Result<(), EXIPError> {
+        self.state = HandlerState::PartialList(vec![], len);
         Ok(())
     }
 
@@ -180,26 +186,35 @@ impl<'a> Iterator for Reader<'a> {
                 let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
                 match ec {
                     ffi::errorCode_EXIP_OK => match &self.handler.state {
-                        HandlerState::PartialAttribute(_) => self.next(),
+                        HandlerState::PartialAttribute(_) | HandlerState::PartialList(_, _) => {
+                            self.next()
+                        }
                         _ => Some(Ok(self.handler.state.take_event())),
                     },
                     ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
                     e => Some(Err(e.into())),
                 }
             }
-            HandlerState::PartialAttribute(name) => {
-                let ec = unsafe { (ffi::parse.parseNext).unwrap()(self.parser.as_mut()) };
-                match ec {
-                    ffi::errorCode_EXIP_OK => {
-                        if let Event::Value(value) = self.handler.state.take_event() {
-                            Some(Ok(Event::Attribute(Attribute { key: name, value })))
-                        } else {
-                            Some(Err(EXIPError::Unexpected))
-                        }
-                    }
-                    e => Some(Err(e.into())),
+            HandlerState::PartialAttribute(name) => match self.next()? {
+                Ok(Event::Value(value)) => {
+                    Some(Ok(Event::Attribute(Attribute { key: name, value })))
                 }
-            }
+                Ok(_) => Some(Err(EXIPError::Unexpected)),
+                Err(e) => Some(Err(e)),
+            },
+            HandlerState::PartialList(mut vec, length) => match self.next()? {
+                Ok(Event::Value(value)) => {
+                    vec.push(value);
+                    if vec.len() == length as usize {
+                        return Some(Ok(Event::Value(Value::List(vec))));
+                    } else {
+                        self.handler.state = HandlerState::PartialList(vec, length);
+                        self.next()
+                    }
+                }
+                Ok(_) => Some(Err(EXIPError::Unexpected)),
+                Err(e) => Some(Err(e)),
+            },
             _ => Some(Err(EXIPError::Unexpected)),
         }
     }
@@ -317,12 +332,15 @@ unsafe extern "C" fn invoke_decimal(val: ffi::Decimal, handler: *mut c_void) -> 
 }
 
 unsafe extern "C" fn invoke_list(
-    exi_type: ffi::EXITypeClass,
+    _: ffi::EXITypeClass,
     item_count: c_uint,
     handler: *mut c_void,
 ) -> ffi::errorCode {
     let handler = &mut *(handler as *mut Handler);
-    0
+    match handler.list(item_count) {
+        Ok(_) => ffi::errorCode_EXIP_OK,
+        Err(e) => e as u32,
+    }
 }
 
 unsafe extern "C" fn invoke_qname(qname: ffi::QName, handler: *mut c_void) -> ffi::errorCode {
