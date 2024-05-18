@@ -34,7 +34,7 @@ pub struct Attribute<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Name<'a> {
     pub local_name: &'a str,
-    pub namespace: &'a str,
+    pub namespace: Option<&'a str>,
     pub prefix: Option<&'a str>,
 }
 
@@ -76,7 +76,7 @@ impl<'a> Display for Value<'a> {
                     Some(_) => ":",
                     None => "",
                 },
-                qname.namespace,
+                qname.namespace.unwrap_or_default(),
                 qname.local_name
             ),
         }
@@ -108,7 +108,7 @@ pub(crate) fn from_stringtype<'a>(str: *const ffi::StringType) -> Option<&'a str
 pub(crate) fn from_qname<'a>(qname: ffi::QName) -> Name<'a> {
     Name {
         local_name: from_stringtype(qname.localName).unwrap_or_default(),
-        namespace: from_stringtype(qname.uri).unwrap_or_default(),
+        namespace: from_stringtype(qname.uri),
         prefix: from_stringtype(qname.prefix),
     }
 }
@@ -118,9 +118,15 @@ pub(crate) fn from_qname<'a>(qname: ffi::QName) -> Name<'a> {
 macro_rules! to_qname {
     ($name:expr) => {
         ffi::QName {
-            uri: &ffi::StringType {
-                str_: $name.namespace.as_ptr() as *mut _,
-                length: $name.namespace.len(),
+            uri: match $name.namespace {
+                Some(n) => &ffi::StringType {
+                    str_: n.as_ptr() as *mut _,
+                    length: n.len(),
+                },
+                None => &ffi::StringType {
+                    str_: std::ptr::null_mut() as *mut _,
+                    length: 0,
+                },
             },
             localName: &ffi::StringType {
                 str_: $name.local_name.as_ptr() as *mut _,

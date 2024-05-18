@@ -242,7 +242,7 @@ impl Writer {
     fn type_value(&mut self, name: Name) -> Result<(), EXIPError> {
         let typename = Name {
             local_name: "type",
-            namespace: "http://www.w3.org/2001/XMLSchema-instance",
+            namespace: Some("http://www.w3.org/2001/XMLSchema-instance"),
             prefix: None,
         };
         let qname = to_qname!(typename);
@@ -312,7 +312,7 @@ fn simple_schemaless_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap();
@@ -360,14 +360,14 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap(); // <MultipleXSDsTest>
     builder
         .add(Event::StartElement(Name {
             local_name: "EXIPEncoder",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap(); // <EXIPEncoder>
@@ -375,7 +375,7 @@ fn full_write() {
         .add(Event::Attribute(Attribute {
             key: Name {
                 local_name: "testByte",
-                namespace: "",
+                namespace: None,
                 prefix: None,
             },
             value: Value::Integer(55),
@@ -385,7 +385,7 @@ fn full_write() {
         .add(Event::Attribute(Attribute {
             key: Name {
                 local_name: "version",
-                namespace: "",
+                namespace: None,
                 prefix: None,
             },
             value: Value::String("0.2"),
@@ -400,7 +400,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "description",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap(); // <description>
@@ -413,7 +413,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "testSetup",
-            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            namespace: Some("http://www.ltu.se/EISLAB/nested-xsd"),
             prefix: None,
         }))
         .unwrap(); // <testSetup>
@@ -421,7 +421,7 @@ fn full_write() {
         .add(Event::Attribute(Attribute {
             key: Name {
                 local_name: "goal",
-                namespace: "",
+                namespace: None,
                 prefix: None,
             },
             value: Value::String("Verify that the implementation works!"),
@@ -436,7 +436,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "type-test",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap(); // <type-test>
@@ -444,7 +444,7 @@ fn full_write() {
         .add(Event::Attribute(Attribute {
             key: Name {
                 local_name: "id",
-                namespace: "",
+                namespace: None,
                 prefix: None,
             },
             value: Value::Integer(1001),
@@ -453,7 +453,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "bool",
-            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            namespace: Some("http://www.ltu.se/EISLAB/nested-xsd"),
             prefix: None,
         }))
         .unwrap(); // <bool>
@@ -463,14 +463,14 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "extendedTypeTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None,
         }))
         .unwrap(); // <extendedTypeTest>
     builder
         .add(Event::StartElement(Name {
             local_name: "byteTest",
-            namespace: "",
+            namespace: None,
             prefix: None,
         }))
         .unwrap(); // <byteTest>
@@ -479,7 +479,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "dateTimeTest",
-            namespace: "",
+            namespace: None,
             prefix: None,
         }))
         .unwrap();
@@ -494,7 +494,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "binaryTest",
-            namespace: "",
+            namespace: None,
             prefix: None,
         }))
         .unwrap();
@@ -507,7 +507,7 @@ fn full_write() {
     builder
         .add(Event::StartElement(Name {
             local_name: "enumTest",
-            namespace: "",
+            namespace: None,
             prefix: None,
         }))
         .unwrap();

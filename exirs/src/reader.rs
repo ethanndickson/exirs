@@ -428,7 +428,7 @@ fn simple_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -479,7 +479,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "MultipleXSDsTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -487,7 +487,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "EXIPEncoder",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -504,7 +504,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "description",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -519,7 +519,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "testSetup",
-            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            namespace: Some("http://www.ltu.se/EISLAB/nested-xsd"),
             prefix: None
         })))
     );
@@ -540,7 +540,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "type-test",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -549,7 +549,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "bool",
-            namespace: "http://www.ltu.se/EISLAB/nested-xsd",
+            namespace: Some("http://www.ltu.se/EISLAB/nested-xsd"),
             prefix: None
         })))
     );
@@ -560,7 +560,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "extendedTypeTest",
-            namespace: "http://www.ltu.se/EISLAB/schema-test",
+            namespace: Some("http://www.ltu.se/EISLAB/schema-test"),
             prefix: None
         })))
     );
@@ -568,7 +568,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "byteTest",
-            namespace: "",
+            namespace: None,
             prefix: None
         })))
     );
@@ -578,7 +578,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "dateTimeTest",
-            namespace: "",
+            namespace: None,
             prefix: None
         })))
     );
@@ -596,7 +596,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "binaryTest",
-            namespace: "",
+            namespace: None,
             prefix: None
         })))
     );
@@ -611,7 +611,7 @@ fn full_read() {
         reader.next(),
         Some(Ok(Event::StartElement(Name {
             local_name: "enumTest",
-            namespace: "",
+            namespace: None,
             prefix: None
         })))
     );
