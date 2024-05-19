@@ -11,12 +11,12 @@ use crate::{
     error::EXIPError,
 };
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Handler<'a> {
     state: HandlerState<'a>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 enum HandlerState<'a> {
     #[default]
     Empty,
@@ -31,6 +31,14 @@ impl<'a> HandlerState<'a> {
         match inner {
             HandlerState::Event(e) => e,
             _ => unreachable!("checked prior"),
+        }
+    }
+
+    fn replace(&mut self, value: Value<'a>) -> Self {
+        if let HandlerState::PartialAttribute(key) = mem::replace(self, HandlerState::Empty) {
+            HandlerState::Event(Event::Attribute(Attribute { key, value }))
+        } else {
+            HandlerState::Event(Event::Value(value))
         }
     }
 }
@@ -65,17 +73,17 @@ impl<'a> Handler<'a> {
     }
 
     fn string(&mut self, value: &'a str) -> Result<(), crate::error::EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::String(value)));
+        self.state = self.state.replace(Value::String(value));
         Ok(())
     }
 
     fn decimal(&mut self, value: ffi::EXIFloat) -> Result<(), crate::error::EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::Float(value.into())));
+        self.state = self.state.replace(Value::Float(value.into()));
         Ok(())
     }
 
     fn boolean(&mut self, value: bool) -> Result<(), crate::error::EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::Boolean(value)));
+        self.state = self.state.replace(Value::Boolean(value));
         Ok(())
     }
 
@@ -86,8 +94,9 @@ impl<'a> Handler<'a> {
 
     fn binary(&mut self, bytes: &'a [u8]) -> Result<(), crate::error::EXIPError> {
         // EXIP immediately frees read bytes, so we need to copy
-        self.state =
-            HandlerState::Event(Event::Value(Value::Binary(Bytes::copy_from_slice(bytes))));
+        self.state = self
+            .state
+            .replace(Value::Binary(Bytes::copy_from_slice(bytes)));
         Ok(())
     }
 
@@ -97,12 +106,12 @@ impl<'a> Handler<'a> {
     }
 
     fn int(&mut self, int: i64) -> Result<(), EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::Integer(int)));
+        self.state = self.state.replace(Value::Integer(int));
         Ok(())
     }
 
     fn float(&mut self, value: ffi::EXIFloat) -> Result<(), EXIPError> {
-        self.state = HandlerState::Event(Event::Value(Value::Float(value.into())));
+        self.state = self.state.replace(Value::Float(value.into()));
         Ok(())
     }
 
@@ -210,13 +219,6 @@ impl<'a> Iterator for Reader<'a> {
                     e => Some(Err(e.into())),
                 }
             }
-            HandlerState::PartialAttribute(name) => match self.next()? {
-                Ok(Event::Value(value)) => {
-                    Some(Ok(Event::Attribute(Attribute { key: name, value })))
-                }
-                Ok(_) => Some(Err(EXIPError::Unexpected)),
-                Err(e) => Some(Err(e)),
-            },
             HandlerState::PartialList(mut vec, length) => match self.next()? {
                 Ok(Event::Value(value)) => {
                     vec.push(value);
@@ -384,6 +386,7 @@ unsafe extern "C" fn invoke_nsdec(
 }
 
 fn new_handler() -> ffi::ContentHandler {
+    // EXIP never calls these functions
     ffi::ContentHandler {
         startDocument: Some(invoke_start_document),
         endDocument: Some(invoke_end_document),
@@ -400,7 +403,6 @@ fn new_handler() -> ffi::ContentHandler {
         listData: Some(invoke_list),
         qnameData: Some(invoke_qname),
         namespaceDeclaration: Some(invoke_nsdec),
-        // EXIP never calls these functions
         warning: None,
         error: None,
         fatalError: None,
@@ -491,8 +493,28 @@ fn full_read() {
             prefix: None
         })))
     );
-    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Integer(55)))));
-    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::String("0.2")))));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "testByte",
+                namespace: None,
+                prefix: None,
+            },
+            value: Value::Integer(55),
+        })))
+    );
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "version",
+                namespace: None,
+                prefix: None,
+            },
+            value: Value::String("0.2"),
+        })))
+    );
     assert_eq!(
         reader.next(),
         Some(Ok(Event::Value(Value::String(
@@ -525,9 +547,14 @@ fn full_read() {
     );
     assert_eq!(
         reader.next(),
-        Some(Ok(Event::Value(Value::String(
-            "Verify that the implementation works!"
-        ))))
+        Some(Ok(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "goal",
+                namespace: None,
+                prefix: None,
+            },
+            value: Value::String("Verify that the implementation works!"),
+        })))
     );
     assert_eq!(
         reader.next(),
@@ -544,7 +571,17 @@ fn full_read() {
             prefix: None
         })))
     );
-    assert_eq!(reader.next(), Some(Ok(Event::Value(Value::Integer(1001)))));
+    assert_eq!(
+        reader.next(),
+        Some(Ok(Event::Attribute(Attribute {
+            key: Name {
+                local_name: "id",
+                namespace: None,
+                prefix: None,
+            },
+            value: Value::Integer(1001),
+        })))
+    );
     assert_eq!(
         reader.next(),
         Some(Ok(Event::StartElement(Name {

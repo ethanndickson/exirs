@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use crate::{data::to_stringtype, error::SchemaError};
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct Options<'a> {
     flags: OptionFlags,
     preserve: PreservationFlags,
@@ -135,6 +136,7 @@ impl<'a> Default for Options<'a> {
 }
 
 bitflags! {
+    #[derive(Debug)]
     struct OptionFlags: u8 {
         const RESET_ALIGNMENT = 0b00111111;
         const ALIGNMENT = 0xc0;
@@ -150,6 +152,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug)]
     struct PreservationFlags: u8 {
         const COMMENTS = 0x01;
         const PIS = 0x02;
@@ -160,6 +163,7 @@ bitflags! {
 }
 
 #[repr(u8)]
+#[derive(Debug)]
 pub enum SchemaIdMode {
     Absent,
     Set,
@@ -167,6 +171,7 @@ pub enum SchemaIdMode {
     Empty,
 }
 
+#[derive(Debug)]
 pub struct Header<'a> {
     has_cookie: bool,
     has_options: bool,
