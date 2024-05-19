@@ -1,4 +1,21 @@
-#[derive(thiserror::Error, Clone, Debug, PartialEq)]
+#[derive(thiserror::Error, Debug)]
+pub enum ReaderError {
+    #[error("EXIPError: {0}")]
+    EXIP(EXIPError),
+    #[error("IO Error: {0}")]
+    IO(std::io::Error),
+}
+
+impl PartialEq for ReaderError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::EXIP(l0), Self::EXIP(r0)) => l0 == r0,
+            (Self::IO(l0), Self::IO(r0)) => l0.kind() == r0.kind(),
+            _ => false,
+        }
+    }
+}
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum EXIPError {
     #[error("unimplemented in EXIP")]
     NotImplemented = 1,

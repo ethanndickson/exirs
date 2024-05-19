@@ -1,4 +1,5 @@
 use std::{
+    io::Read,
     mem::{self, MaybeUninit},
     os::raw::{c_char, c_uint, c_void},
 };
@@ -8,8 +9,10 @@ use bytes::Bytes;
 use crate::{
     config::{Options, Schema},
     data::{from_qname, from_stringtype, Attribute, Event, Name, NamespaceDeclaration, Value},
-    error::EXIPError,
+    error::{EXIPError, ReaderError},
 };
+
+const INPUT_BUFFER_SIZE: usize = 8 * 1024;
 
 #[derive(Default)]
 struct Handler<'a> {
@@ -125,23 +128,28 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 }
-pub struct Reader<'a> {
+pub struct Reader<'a, R: Read> {
     parser: Box<ffi::Parser>,
-    _buf: Bytes,
+    _buf: Box<[u8; INPUT_BUFFER_SIZE]>,
     handler: Box<Handler<'a>>,
+    source: R,
 }
 
-impl<'a> Reader<'a> {
+impl<'a, R: Read> Reader<'a, R> {
+    /// if `bytes` is buffered, it'll get double buffered.
     ///
-    /// If a `crate::config::Options` is supplied, it will be used where
+    /// If a `crate::config::Options` is supplied, it will be used when not found in the EXI header
     pub fn new(
-        bytes: impl Into<Bytes>,
+        mut source: R,
         schema: Option<Schema>,
         options: Option<Options>,
-    ) -> Result<Self, EXIPError> {
+    ) -> Result<Self, ReaderError> {
         let has_options = options.is_some() as u32;
         let mut parser: MaybeUninit<ffi::Parser> = MaybeUninit::uninit();
-        let heap_buf: Bytes = bytes.into();
+        let mut heap_buf = Box::new([0u8; INPUT_BUFFER_SIZE]);
+        source
+            .read(&mut heap_buf.as_mut_slice())
+            .map_err(|e| ReaderError::IO(e))?;
         let buf_rep = ffi::BinaryBuffer {
             buf: heap_buf.as_ptr() as *mut _,
             bufLen: heap_buf.len(),
@@ -174,24 +182,29 @@ impl<'a> Reader<'a> {
             )
         };
         if ec != 0 {
-            return Err(ec.into());
+            return Err(ReaderError::EXIP(ec.into()));
         }
         Ok(Self {
+            source,
             parser: Box::new(parser),
             _buf: heap_buf,
             handler,
         })
     }
+
+    fn pull(&mut self) {
+        todo!()
+    }
 }
 
-impl<'a> Drop for Reader<'a> {
+impl<'a, R: Read> Drop for Reader<'a, R> {
     fn drop(&mut self) {
         unsafe { (ffi::parse.destroyParser).unwrap()(self.parser.as_mut() as *mut _) }
     }
 }
 
-impl<'a> Iterator for Reader<'a> {
-    type Item = Result<Event<'a>, EXIPError>;
+impl<'a, R: Read> Iterator for Reader<'a, R> {
+    type Item = Result<Event<'a>, ReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match mem::replace(&mut self.handler.state, HandlerState::Empty) {
@@ -206,15 +219,19 @@ impl<'a> Iterator for Reader<'a> {
                         }
                         _ => Some(Ok(self.handler.state.take_event())),
                     },
+                    ffi::errorCode_EXIP_BUFFER_END_REACHED => {
+                        self.pull();
+                        self.next()
+                    }
                     ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
-                    e => Some(Err(e.into())),
+                    e => Some(Err(ReaderError::EXIP(e.into()))),
                 }
             }
             HandlerState::PartialAttribute(name) => match self.next()? {
                 Ok(Event::Value(value)) => {
                     Some(Ok(Event::Attribute(Attribute { key: name, value })))
                 }
-                Ok(_) => Some(Err(EXIPError::Unexpected)),
+                Ok(_) => Some(Err(ReaderError::EXIP(EXIPError::Unexpected))),
                 Err(e) => Some(Err(e)),
             },
             HandlerState::PartialList(mut vec, length) => match self.next()? {
@@ -227,10 +244,10 @@ impl<'a> Iterator for Reader<'a> {
                         self.next()
                     }
                 }
-                Ok(_) => Some(Err(EXIPError::Unexpected)),
+                Ok(_) => Some(Err(ReaderError::EXIP(EXIPError::Unexpected))),
                 Err(e) => Some(Err(e)),
             },
-            _ => Some(Err(EXIPError::Unexpected)),
+            _ => Some(Err(ReaderError::EXIP(EXIPError::Unexpected))),
         }
     }
 }
@@ -422,7 +439,7 @@ fn simple_read() {
         146, 64, 230, 232, 228, 202, 194, 218, 230, 64, 234, 230, 210, 220, 206, 64, 138, 176, 146,
         160, 64, 216, 222, 238, 64, 216, 202, 236, 202, 216, 64, 130, 160, 146,
     ];
-    let mut reader = Reader::new(Bytes::from_static(input), None, None).unwrap();
+    let mut reader = Reader::new(input.as_slice(), None, None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
@@ -473,7 +490,7 @@ fn full_read() {
         None,
     )
     .unwrap();
-    let mut reader = Reader::new(Bytes::from_static(input), Some(schema), None).unwrap();
+    let mut reader = Reader::new(input.as_slice(), Some(schema), None).unwrap();
     assert_eq!(reader.next(), Some(Ok(Event::StartDocument)));
     assert_eq!(
         reader.next(),
