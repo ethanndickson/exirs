@@ -12,7 +12,7 @@ use crate::{
     error::{EXIPError, ReaderError},
 };
 
-const INPUT_BUFFER_SIZE: usize = 8 * 1024;
+const INPUT_BUFFER_SIZE: usize = 128;
 
 #[derive(Default)]
 struct Handler<'a> {
@@ -192,8 +192,20 @@ impl<'a, R: Read> Reader<'a, R> {
         })
     }
 
-    fn pull(&mut self) {
-        todo!()
+    fn pull(&mut self) -> Result<(), ReaderError> {
+        let mut buf = Box::new([0u8; INPUT_BUFFER_SIZE / 3]);
+        self.source
+            .read(buf.as_mut_slice())
+            .map_err(|e| ReaderError::IO(e))?;
+        let ec = unsafe {
+            ffi::pushEXIData(
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as u32,
+                self.parser.as_mut(),
+            )
+        };
+        assert_eq!(ec, 0);
+        Ok(())
     }
 }
 
@@ -220,8 +232,11 @@ impl<'a, R: Read> Iterator for Reader<'a, R> {
                         _ => Some(Ok(self.handler.state.take_event())),
                     },
                     ffi::errorCode_EXIP_BUFFER_END_REACHED => {
-                        self.pull();
-                        self.next()
+                        if let Err(e) = self.pull() {
+                            Some(Err(e))
+                        } else {
+                            self.next()
+                        }
                     }
                     ffi::errorCode_EXIP_PARSING_COMPLETE => Some(Ok(Event::EndDocument)),
                     e => Some(Err(ReaderError::EXIP(e.into()))),
